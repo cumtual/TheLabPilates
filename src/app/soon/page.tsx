@@ -84,7 +84,7 @@ export default function SoonPage() {
 
         <div className="flex gap-8">
           <a
-            href="#"
+            href="https://www.instagram.com/thelabpilates.hpjn/" target="_blank"
             className="text-[12px] font-semibold uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
           >
             Instagram
@@ -103,6 +103,12 @@ export default function SoonPage() {
           </a>
         </div>
       </footer>
+
+      <div className="text-center pb-6 bg-surface-cream">
+        <p className="text-[11px] text-on-surface-variant/50">
+          with love <a href="https://cumtual.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors underline">Cumtual</a> ❤️
+        </p>
+      </div>
     </div>
   )
 }
