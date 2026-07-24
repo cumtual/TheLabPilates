@@ -1,0 +1,64 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+
+export default function Navbar() {
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 50)
+    }
+    handleScroll()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  return (
+    <header
+      suppressHydrationWarning
+      className={`fixed top-0 left-0 right-0 w-full z-50 transition-all duration-300 ${
+        scrolled
+          ? 'bg-white shadow-sm py-4'
+          : 'bg-transparent py-6'
+      }`}
+    >
+      <div className="flex justify-between items-center px-6 md:px-[24px] max-w-[1280px] mx-auto">
+        <div className="flex items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt="The Lab Pilates Logo"
+            className="h-8 md:h-10 w-auto object-contain"
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAst79cvRgGmmQg_2cLK4fDlgcija7TYEdNUdvxdz81bi0jh-4ksPxJos5pZ-fnE5zSrSU0iTw979fL67MnMk-Gjg5Jh45IYZL7RUzIFQfERHYJ2JDBx4zEVDWghuASofwW3ng_ZhAw6YWwrhv3Qj4wbJ0H4MyJ0oJX_2R9DnevmZsmY9Jgf_sAfoYb7jUGR8qcuv6c8eybO9DuaqkassCtWsJV5GWOp184kRZfykZ1mzb12MkklC9kb9h9cokhEmpzO6RJtD2Rfx8"
+          />
+        </div>
+
+        <nav className="hidden md:flex items-center gap-10">
+          <a
+            className="font-body text-label-caps font-semibold uppercase tracking-[0.1em] text-on-surface-variant hover:text-primary transition-colors duration-300"
+            href="#filosofia"
+          >
+            Philosophy
+          </a>
+          <a
+            className="font-body text-label-caps font-semibold uppercase tracking-[0.1em] text-on-surface-variant hover:text-primary transition-colors duration-300"
+            href="#paquetes"
+          >
+            Packages
+          </a>
+          <a
+            className="font-body text-label-caps font-semibold uppercase tracking-[0.1em] text-on-surface-variant hover:text-primary transition-colors duration-300"
+            href="#ubicacion"
+          >
+            Location
+          </a>
+        </nav>
+
+        <Link href="/soon" className="bg-soft-charcoal text-plaster-white px-6 py-3 font-body text-label-caps font-semibold uppercase tracking-[0.1em] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm hover:shadow-md cursor-pointer">
+          ACCESO
+        </Link>
+      </div>
+    </header>
+  )
+}
