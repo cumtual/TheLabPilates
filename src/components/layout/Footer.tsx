@@ -18,7 +18,7 @@ export default function Footer() {
           <div className="flex flex-wrap justify-center md:justify-end gap-10">
             <a
               className="text-[12px] font-semibold tracking-widest text-on-surface-variant hover:text-primary transition-colors uppercase"
-              href="#"
+              href="https://www.instagram.com/thelabpilates.hpjn/" target="_blank"
             >
               Instagram
             </a>
@@ -44,6 +44,12 @@ export default function Footer() {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="text-center pb-6">
+        <p className="text-[11px] text-on-surface-variant/50">
+          with love <a href="https://cumtual.com" target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors underline">Cumtual</a> ❤️
+        </p>
       </div>
     </footer>
   )
