@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
@@ -27,10 +28,12 @@ export default function Navbar() {
       <div className="flex justify-between items-center px-6 md:px-[24px] max-w-[1280px] mx-auto">
         <div className="flex items-center gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <Image
             alt="The Lab Pilates Logo"
             className="h-8 md:h-10 w-auto object-contain"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAst79cvRgGmmQg_2cLK4fDlgcija7TYEdNUdvxdz81bi0jh-4ksPxJos5pZ-fnE5zSrSU0iTw979fL67MnMk-Gjg5Jh45IYZL7RUzIFQfERHYJ2JDBx4zEVDWghuASofwW3ng_ZhAw6YWwrhv3Qj4wbJ0H4MyJ0oJX_2R9DnevmZsmY9Jgf_sAfoYb7jUGR8qcuv6c8eybO9DuaqkassCtWsJV5GWOp184kRZfykZ1mzb12MkklC9kb9h9cokhEmpzO6RJtD2Rfx8"
+            src="/images/TheLabLogo.png"
+            width={80}
+            height={60}
           />
         </div>
 
