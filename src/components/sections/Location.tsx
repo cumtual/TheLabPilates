@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export default function Location() {
   return (
     <section className="py-section-gap px-[24px] max-w-7xl mx-auto" id="ubicacion">
@@ -75,14 +77,17 @@ export default function Location() {
         {/* Studio Image */}
         <div className="relative h-[600px] rounded-2xl overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <Image
             className="w-full h-full object-cover opacity-80"
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKlsiOaagR9dEPuzhqGEz0WBvX0jDMA4Ry-tDFncnL96lWuk-8NA4fczOe0mRBVrECAX_bWmSqkX2NpziHvCBeVA3qH_8ghQdlKBqaKG9zO-PuLwZntYRHftj1MJ7nBm7JMgQeH2WtOy3zUhsjh1FIJqLgJ6fHZZYSieE2TjHA7Wvegm6OrP26LAsBcSXGCYHSoW3SBXBVh9T-i9kPPmJRKbRV-oujY84U39W9ANiaXYy9Zm8KoesCJa0MUGtc1WFH8awabwVgBmY"
+            src="/images/TheLabPilatesStudio2.png"
             alt="The Lab Pilates Studio entrance featuring minimalist architecture and arched windows"
+            fill
+            quality={90}
+            sizes="(max-width: 1024px) 100vw, 50vw"
           />
           <div className="absolute inset-0 bg-gradient-to-br from-warm-wood/10 to-transparent pointer-events-none" />
           <div className="absolute bottom-10 left-10 bg-white/90 backdrop-blur p-6 rounded-lg shadow-xl border border-white/40">
-            <p className="font-headline text-2xl mb-1">The Lab</p>
+            <p className="font-headline text-2xl mb-1">THE LAB</p>
             <p className="text-[10px] font-semibold tracking-widest opacity-60 uppercase">
               Pilates yoga barre
             </p>
