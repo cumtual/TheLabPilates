@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/cumtual/TheLabPilates/compare/v1.1.0...v1.1.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* **location:** update studio address and location label ([0284a89](https://github.com/cumtual/TheLabPilates/commit/0284a8900779e698b3270b64db21325dbfda99e1))
+* **seo:** correct studio street address in JSON-LD structured data ([8bef3a0](https://github.com/cumtual/TheLabPilates/commit/8bef3a08d5f197853acbccd8e90bedbbbf4044ef))
+
 ## [1.1.0](https://github.com/cumtual/TheLabPilates/compare/v1.0.0...v1.1.0) (2026-07-25)
 
 
