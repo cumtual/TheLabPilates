@@ -11,8 +11,32 @@ import Location from "@/components/sections/Location";
 import Footer from "@/components/layout/Footer";
 
 export default function Home() {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SportsActivityLocation",
+    name: "The Lab Pilates Studio",
+    description:
+      "Estudio boutique de Mat Pilates, Barre y Hatha Yoga en Huajuapan de León, Oaxaca.",
+    url: "https://thelabpilatesstudio.com.mx",
+    // telephone: "+529531234567",
+    email: "info@thelabpilatesstudio.com.mx",
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: "Esquina Matamoros con Micaela Galindo 24, centro",
+      addressLocality: "Huajuapan de León",
+      addressRegion: "Oaxaca",
+      addressCountry: "MX",
+    },
+    openingDate: "2026-08",
+    sameAs: [],
+  }
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <Navbar />
       <main>
         <Hero />

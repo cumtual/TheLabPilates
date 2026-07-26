@@ -1,4 +1,4 @@
-import Image from "next/image";
+import WaitlistForm from '@/components/sections/WaitlistForm'
 
 export default function Location() {
   return (
@@ -36,62 +36,28 @@ export default function Location() {
                   CONTACTO
                 </h4>
                 <p className="text-on-surface-variant">
-                  hola@thelabpilates.com
+                  info@thelabpilatesstudio.com.mx
                   <br />
-                  +52 953 123 4567
+                  <a href="https://www.instagram.com/thelabpilates.hpjn/" target="_blank">@thelabpilates.hpjn</a>
                 </p>
               </div>
             </div>
           </div>
 
-          <form className="space-y-6 max-w-md">
-            <div>
-              <label className="text-[10px] font-semibold text-on-surface-variant mb-2 block tracking-widest uppercase">
-                Nombre Completo
-              </label>
-              <input
-                className="w-full bg-transparent border-b border-primary py-3 focus:outline-none focus:border-warm-wood transition-colors"
-                placeholder="Tu nombre..."
-                type="text"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-on-surface-variant mb-2 block tracking-widest uppercase">
-                Email
-              </label>
-              <input
-                className="w-full bg-transparent border-b border-primary py-3 focus:outline-none focus:border-warm-wood transition-colors"
-                placeholder="correo@ejemplo.com"
-                type="email"
-              />
-            </div>
-            <button
-              className="bg-soft-charcoal text-plaster-white px-10 py-4 text-[12px] font-semibold tracking-widest hover:bg-primary transition-colors mt-4 uppercase cursor-pointer"
-              type="submit"
-            >
-              LISTA DE ESPERA
-            </button>
-          </form>
+          <WaitlistForm />
         </div>
 
-        {/* Studio Image */}
+        {/* Google Maps */}
         <div className="relative h-[600px] rounded-2xl overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <Image
-            className="w-full h-full object-cover opacity-80"
-            src="/images/TheLabPilatesStudio2.png"
-            alt="The Lab Pilates Studio entrance featuring minimalist architecture and arched windows"
-            fill
-            quality={90}
-            sizes="(max-width: 1024px) 100vw, 50vw"
+          <iframe
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d650.3118584733268!2d-97.77854102423386!3d17.805002892544284!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x85c601fbc3f37335%3A0xa625ed5256bca402!2sCalle%20Prol.%20de%20Micaela%20Galindo%2024%2C%20Centro%2C%2069000%20Heroica%20Cdad.%20de%20Huajuapan%20de%20Le%C3%B3n%2C%20Oax.!5e0!3m2!1ses!2smx!4v1785045922930!5m2!1ses!2smx"
+            className="w-full h-full rounded-2xl"
+            style={{ border: 0 }}
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+            title="Ubicación de The Lab Pilates Studio en Google Maps"
           />
-          <div className="absolute inset-0 bg-gradient-to-br from-warm-wood/10 to-transparent pointer-events-none" />
-          <div className="absolute bottom-10 left-10 bg-white/90 backdrop-blur p-6 rounded-lg shadow-xl border border-white/40">
-            <p className="font-headline text-2xl mb-1">THE LAB</p>
-            <p className="text-[10px] font-semibold tracking-widest opacity-60 uppercase">
-              Pilates yoga barre
-            </p>
-          </div>
         </div>
       </div>
     </section>
