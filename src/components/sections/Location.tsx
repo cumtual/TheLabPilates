@@ -20,10 +20,10 @@ export default function Location() {
               </span>
               <div>
                 <h4 className="text-[12px] font-semibold mb-1 uppercase tracking-widest">
-                  CENTRO HISTÓRICO
+                  CENTRO
                 </h4>
                 <p className="text-on-surface-variant">
-                  Calle Fray Bartolomé de las Casas,
+                  Calle Prol. de Micaela Galindo 24
                   <br />
                   Huajuapan de León, Oaxaca.
                 </p>
