@@ -5,7 +5,7 @@ import { jwtVerify } from 'jose';
 const SESSION_COOKIE = 'session';
 
 const protectedPrefixes = ['/client', '/coach', '/admin'];
-const authPages = ['/login', '/register', '/reset-password'];
+const authPages = ['/login', '/register', '/reset-password', '/verify-email'];
 
 const roleDashboard: Record<string, string> = {
   client: '/client',
@@ -69,6 +69,7 @@ export const config = {
     '/login',
     '/register',
     '/reset-password/:path*',
+    '/verify-email/:path*',
     '/client/:path*',
     '/coach/:path*',
     '/admin/:path*',
