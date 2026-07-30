@@ -46,7 +46,7 @@ export default function Hero() {
           <span className="italic font-normal">conectar</span> contigo
         </h1>
         <div className="flex flex-col md:flex-row gap-6 justify-center items-center">
-          <Link href="/soon" className="bg-soft-charcoal text-plaster-white px-10 py-5 text-[12px] font-semibold tracking-[0.2em] hover:bg-primary transition-colors uppercase cursor-pointer">
+          <Link href="/login" className="bg-soft-charcoal text-plaster-white px-10 py-5 text-[12px] font-semibold tracking-[0.2em] hover:bg-primary transition-colors uppercase cursor-pointer">
             RESERVAR LAB PASS
           </Link>
           <a

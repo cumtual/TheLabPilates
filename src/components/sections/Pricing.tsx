@@ -137,7 +137,7 @@ export default function Pricing() {
               </div>
 
               <Link
-                href="/soon"
+                href="/login"
                 className={
                   pkg.premium
                     ? 'w-full py-5 bg-plaster-white text-warm-wood text-[12px] font-semibold tracking-widest hover:bg-soft-charcoal hover:text-white transition-all shadow-lg uppercase cursor-pointer text-center block'
