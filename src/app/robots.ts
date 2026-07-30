@@ -5,8 +5,8 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: '/soon',
+      disallow: ['/client', '/coach', '/admin', '/login', '/register', '/reset-password', '/soon'],
     },
-    sitemap: 'https:/thelabpilatesstudio.com.mx/sitemap.xml',
+    sitemap: 'https://thelabpilatesstudio.com.mx/sitemap.xml',
   }
 }
