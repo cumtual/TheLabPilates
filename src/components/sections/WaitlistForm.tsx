@@ -42,7 +42,7 @@ export default function WaitlistForm() {
           <p className="font-headline text-xl text-soft-charcoal">¡Te registraste!</p>
         </div>
         <p className="text-[16px] text-on-surface-variant">
-          Te notificaremos cuando abramos. Gracias por tu interés.
+          Te enviaremos la información a tu correo. Gracias por tu interés.
         </p>
       </div>
     )
@@ -86,7 +86,7 @@ export default function WaitlistForm() {
         type="submit"
         disabled={status === 'loading'}
       >
-        {status === 'loading' ? 'ENVIANDO...' : 'LISTA DE ESPERA'}
+        {status === 'loading' ? 'ENVIANDO...' : 'SOLICITAR INFORMACIÓN'}
       </button>
     </form>
   )
