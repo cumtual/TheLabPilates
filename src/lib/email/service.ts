@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM_EMAIL = 'The Lab Pilates <noreply@thelabpilates.com>';
+const FROM_EMAIL = 'The Lab Pilates Studio <noreply@thelabpilatesstudio.com.mx>';
 
 interface EmailPayload {
   to: string;
@@ -88,7 +88,7 @@ export async function sendClassCancellationEmail(
   for (const recipient of recipients) {
     await sendEmail({
       to: recipient.email,
-      subject: 'Clase cancelada - The Lab Pilates',
+      subject: 'Clase cancelada - The Lab Pilates Studio',
       html: `
         <h1>Clase Cancelada</h1>
         <p>Hola ${recipient.name},</p>
