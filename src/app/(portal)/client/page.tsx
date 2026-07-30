@@ -17,6 +17,7 @@ function formatDate(date: Date): string {
 
 type SubscriptionState =
   | { type: 'active'; daysRemaining: number; expirationDate: string; paymentConfirmed: boolean }
+  | { type: 'credits_exhausted'; expirationDate: string }
   | { type: 'pending' }
   | { type: 'expired'; expirationDate: string }
   | { type: 'suspended' }
@@ -57,6 +58,16 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
     return {
       type: 'expired',
       expirationDate: formatDate(new Date(userSub.expirationDate)),
+    };
+  }
+
+  // Active subscription with no credits left
+  if (userSub.active && (userSub.daysRemaining ?? 0) <= 0) {
+    return {
+      type: 'credits_exhausted',
+      expirationDate: userSub.expirationDate
+        ? formatDate(new Date(userSub.expirationDate))
+        : '--/--/----',
     };
   }
 
@@ -182,6 +193,35 @@ export default async function ClientDashboardPage() {
               className="inline-flex items-center justify-center w-full px-6 py-3 font-semibold uppercase tracking-widest text-label-caps bg-soft-charcoal text-on-primary rounded-DEFAULT transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-soft-charcoal min-h-11"
             >
               Renovar Suscripción
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {state.type === 'credits_exhausted' && (
+        <Card>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-body text-lg font-semibold text-on-surface">
+                Créditos Agotados
+              </h2>
+              <Badge variant="pending">Sin créditos</Badge>
+            </div>
+
+            <p className="font-body text-sm text-on-surface-variant">
+              Has utilizado todos tus créditos de sesión. Adquiere un nuevo paquete para seguir reservando clases.
+            </p>
+
+            <div className="space-y-1">
+              <p className="font-body text-sm text-outline">Créditos disponibles</p>
+              <p className="font-body text-3xl font-bold text-error">0</p>
+            </div>
+
+            <Link
+              href="/client/subscription"
+              className="inline-flex items-center justify-center w-full px-6 py-3 font-semibold uppercase tracking-widest text-label-caps bg-soft-charcoal text-on-primary rounded-DEFAULT transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-soft-charcoal min-h-11"
+            >
+              Adquirir Nuevo Paquete
             </Link>
           </div>
         </Card>

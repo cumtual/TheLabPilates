@@ -52,8 +52,8 @@ export default async function SubscriptionPage({
       hasPendingPayment = true;
     }
 
-    // Check active subscription
-    if (userSub.active && userSub.expirationDate && new Date(userSub.expirationDate) > new Date()) {
+    // Check active subscription (only if it has credits remaining)
+    if (userSub.active && (userSub.daysRemaining ?? 0) > 0 && userSub.expirationDate && new Date(userSub.expirationDate) > new Date()) {
       hasActiveSubscription = true;
       activeCredits = userSub.daysRemaining ?? 0;
       const exp = new Date(userSub.expirationDate);
