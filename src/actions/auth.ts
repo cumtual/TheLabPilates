@@ -8,7 +8,7 @@ import { users, passwordResets } from '@/db/schema';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { createSession, destroySession } from '@/lib/auth/session';
 import { loginRateLimiter, passwordResetRateLimiter } from '@/lib/auth/rate-limiter';
-import { sendPasswordResetEmail } from '@/lib/email/service';
+import { sendPasswordResetEmail, sendVerificationEmail } from '@/lib/email/service';
 import type { ActionResult } from '@/lib/types';
 
 const GENERIC_LOGIN_ERROR = 'Credenciales inválidas. Verifica tu correo y contraseña.';
@@ -40,6 +40,16 @@ export async function loginAction(_prevState: ActionResult | null, formData: For
   const isValid = await verifyPassword(password, user.password);
   if (!isValid) {
     loginRateLimiter.recordAttempt(email.toLowerCase());
+    return { success: false, error: GENERIC_LOGIN_ERROR };
+  }
+
+  // Check email verification
+  if (!user.emailVerified) {
+    return { success: false, error: 'Debes verificar tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada.' };
+  }
+
+  // Check if account is deleted
+  if (user.deletedAt) {
     return { success: false, error: GENERIC_LOGIN_ERROR };
   }
 
@@ -94,8 +104,9 @@ export async function registerAction(_prevState: ActionResult | null, formData: 
     };
   }
 
-  // Hash password and create user
+  // Hash password and create user with verification token
   const hashedPassword = await hashPassword(password);
+  const verificationToken = crypto.randomUUID();
   const [newUser] = await db
     .insert(users)
     .values({
@@ -103,12 +114,16 @@ export async function registerAction(_prevState: ActionResult | null, formData: 
       email: email.toLowerCase(),
       password: hashedPassword,
       role: 'client',
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
     })
     .returning();
 
-  // Create session and redirect to client portal
-  await createSession(newUser.id, newUser.role, newUser.email);
-  redirect('/client');
+  // Send verification email
+  await sendVerificationEmail(newUser.email, verificationToken);
+
+  // Redirect to verification pending page
+  return { success: true, message: 'Cuenta creada. Revisa tu correo para verificar tu cuenta.' };
 }
 
 const GENERIC_RESET_MESSAGE = 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.';

@@ -24,6 +24,23 @@ export function RegisterForm() {
         </p>
       )}
 
+      {state?.success && (
+        <div className="text-center space-y-4">
+          <span className="material-symbols-outlined text-primary text-[48px]">mark_email_read</span>
+          <p role="status" className="font-body text-body-md text-primary bg-primary/10 rounded-DEFAULT px-4 py-3">
+            {state.message}
+          </p>
+          <Link
+            href="/login"
+            className="font-body text-body-md text-primary underline underline-offset-2 hover:text-secondary transition-colors"
+          >
+            Ir a iniciar sesión
+          </Link>
+        </div>
+      )}
+
+      {!state?.success && (
+      <>
       <Input
         id="username"
         name="username"
@@ -93,6 +110,8 @@ export function RegisterForm() {
           ¿Ya tienes cuenta? Inicia sesión
         </Link>
       </div>
+      </>
+      )}
     </form>
   );
 }

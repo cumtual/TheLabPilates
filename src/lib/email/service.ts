@@ -99,3 +99,21 @@ export async function sendClassCancellationEmail(
     });
   }
 }
+
+
+export async function sendVerificationEmail(
+  email: string,
+  token: string
+): Promise<void> {
+  const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email/${token}`;
+  await sendEmail({
+    to: email,
+    subject: 'Verifica tu correo - The Lab Pilates Studio',
+    html: `
+      <h1>Bienvenido a The Lab Pilates Studio</h1>
+      <p>Gracias por registrarte. Para completar tu registro, verifica tu correo electrónico.</p>
+      <p><a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#2d2926;color:#fff;text-decoration:none;border-radius:4px;">Verificar mi correo</a></p>
+      <p>Si no creaste una cuenta, puedes ignorar este correo.</p>
+    `,
+  });
+}

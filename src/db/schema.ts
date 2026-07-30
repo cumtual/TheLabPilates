@@ -46,6 +46,8 @@ export const users = pgTable('users', {
   email: varchar('email').notNull().unique(),
   password: varchar('password').notNull(),
   role: userRoleEnum('role').notNull().default('client'),
+  emailVerified: boolean('email_verified').default(false),
+  emailVerificationToken: varchar('email_verification_token'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 });
