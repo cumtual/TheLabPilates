@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     await resend.emails.send({
-      from: 'The Lab Pilates <noreply@thelabpilatesstudio.com.mx>',
+      from: 'The Lab Pilates Studio <noreply@thelabpilatesstudio.com.mx>',
       to: 'thelabpilates77@gmail.com',
       subject: `Nueva inscripción en lista de espera: ${name}`,
       html: `
