@@ -6,12 +6,12 @@ export default function Location() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
         {/* Contact Info & Form */}
         <div>
-          <p className="text-[12px] font-semibold text-primary mb-4 tracking-widest uppercase">
+          {/* <p className="text-[12px] font-semibold text-primary mb-4 tracking-widest uppercase">
             PRÓXIMA APERTURA
           </p>
           <h2 className="font-headline text-[40px] md:text-[48px] mb-8 leading-tight">
             Agosto 2026
-          </h2>
+          </h2> */}
 
           <div className="space-y-8 mb-12">
             <div className="flex gap-4">
@@ -36,7 +36,7 @@ export default function Location() {
                   CONTACTO
                 </h4>
                 <p className="text-on-surface-variant">
-                  info@thelabpilatesstudio.com.mx
+                  <a href='mailto:info@thelabpilatesstudio.com.mx'>info@thelabpilatesstudio.com.mx</a>
                   <br />
                   <a href="https://www.instagram.com/thelabpilates.hpjn/" target="_blank">@thelabpilates.hpjn</a>
                 </p>
