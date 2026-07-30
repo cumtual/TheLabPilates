@@ -54,6 +54,8 @@ export function Button({
     'font-semibold uppercase tracking-[0.1em]',
     // Shape
     'rounded-DEFAULT',
+    // Touch target: minimum 44×44px
+    'min-h-11',
     // Transitions & hover
     'transition-all duration-200 ease-out',
     'hover:-translate-y-0.5',

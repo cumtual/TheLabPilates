@@ -80,7 +80,7 @@ export default function Schedule() {
                     Instructor: {cls.instructor}
                   </p>
                 </div>
-                <Link href="/soon" className="mt-2 py-2 px-4 border border-primary text-primary text-[10px] font-semibold tracking-widest hover:bg-primary hover:text-white transition-all uppercase cursor-pointer inline-block">
+                <Link href="/login" className="mt-2 py-2 px-4 border border-primary text-primary text-[10px] font-semibold tracking-widest hover:bg-primary hover:text-white transition-all uppercase cursor-pointer inline-block">
                   Reservar
                 </Link>
               </div>
