@@ -3,8 +3,9 @@
 import { useState, useTransition } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
 import { Pagination } from '@/components/ui/Pagination';
-import { confirmPaymentAction } from '@/actions/admin';
+import { confirmPaymentAction, rejectPaymentAction } from '@/actions/admin';
 
 const PAGE_SIZE = 10;
 
@@ -48,6 +49,8 @@ export function PaymentManagement({ payments }: PaymentManagementProps) {
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
+  const [confirmRejectId, setConfirmRejectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -55,6 +58,8 @@ export function PaymentManagement({ payments }: PaymentManagementProps) {
 
   // Apply filters
   const filteredPayments = payments.filter((p) => {
+    // Exclude rejected payments
+    if (rejectedIds.has(p.paymentId)) return false;
     if (typeFilter !== 'all' && p.paymentType !== typeFilter) return false;
     if (statusFilter === 'pending' && (p.confirmed || confirmedIds.has(p.paymentId))) return false;
     if (statusFilter === 'confirmed' && !p.confirmed && !confirmedIds.has(p.paymentId)) return false;
@@ -128,6 +133,26 @@ export function PaymentManagement({ payments }: PaymentManagementProps) {
       if (result.success) {
         setConfirmedIds((prev) => new Set([...prev, paymentId]));
         setSuccessMessage(result.message ?? 'Pago confirmado exitosamente.');
+      } else {
+        setError(result.error);
+      }
+      setPendingId(null);
+    });
+  }
+
+  function handleRejectConfirm() {
+    if (!confirmRejectId) return;
+    const paymentId = confirmRejectId;
+    setConfirmRejectId(null);
+    setError(null);
+    setSuccessMessage(null);
+    setPendingId(paymentId);
+
+    startTransition(async () => {
+      const result = await rejectPaymentAction(paymentId);
+      if (result.success) {
+        setRejectedIds((prev) => new Set([...prev, paymentId]));
+        setSuccessMessage(result.message ?? 'Pago rechazado.');
       } else {
         setError(result.error);
       }
@@ -286,16 +311,26 @@ export function PaymentManagement({ payments }: PaymentManagementProps) {
                   </div>
 
                   {!isConfirmed && (
-                    <button
-                      type="button"
-                      onClick={() => handleConfirm(payment.paymentId)}
-                      disabled={isPending && pendingId === payment.paymentId}
-                      className="inline-flex items-center justify-center px-5 py-3 font-body text-sm font-semibold uppercase tracking-wider bg-primary text-on-primary rounded-lg transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none min-h-11 min-w-11"
-                    >
-                      {isPending && pendingId === payment.paymentId
-                        ? 'Confirmando...'
-                        : 'Confirmar'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleConfirm(payment.paymentId)}
+                        disabled={isPending && pendingId === payment.paymentId}
+                        className="inline-flex items-center justify-center px-5 py-3 font-body text-sm font-semibold uppercase tracking-wider bg-primary text-on-primary rounded-lg transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none min-h-11 min-w-11"
+                      >
+                        {isPending && pendingId === payment.paymentId
+                          ? 'Procesando...'
+                          : 'Confirmar'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRejectId(payment.paymentId)}
+                        disabled={isPending && pendingId === payment.paymentId}
+                        className="inline-flex items-center justify-center px-4 py-3 font-body text-sm font-semibold uppercase tracking-wider text-error border border-error/30 rounded-lg transition-all duration-200 ease-out hover:bg-error/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error disabled:opacity-50 disabled:cursor-not-allowed min-h-11 min-w-11"
+                      >
+                        Rechazar
+                      </button>
+                    </div>
                   )}
                 </div>
               </Card>
@@ -306,6 +341,22 @@ export function PaymentManagement({ payments }: PaymentManagementProps) {
 
       {/* Pagination */}
       <Pagination currentPage={page} totalPages={totalPages} onChange={setPage} />
+
+      {/* Reject Confirmation Modal */}
+      <Modal
+        isOpen={confirmRejectId !== null}
+        onClose={() => setConfirmRejectId(null)}
+        onConfirm={handleRejectConfirm}
+        title="Rechazar pago"
+        confirmLabel="Sí, rechazar"
+        cancelLabel="Cancelar"
+        variant="danger"
+      >
+        <p>¿Estás seguro de que deseas rechazar este pago?</p>
+        <p className="mt-2 text-sm text-on-surface-variant">
+          Se eliminará el registro de pago y la suscripción vinculada. El cliente será notificado por correo electrónico y podrá adquirir una nueva suscripción.
+        </p>
+      </Modal>
     </div>
   );
 }
