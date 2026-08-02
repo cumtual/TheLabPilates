@@ -12,7 +12,7 @@ import {
   users,
 } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
-import { sendClassCancellationEmail } from '@/lib/email/service';
+import { sendClassCancellationEmail, sendPaymentRejectedEmail } from '@/lib/email/service';
 import type { ActionResult } from '@/lib/types';
 import { ALL_ROLES } from '@/lib/types/roles';
 import type { UserRole } from '@/lib/types/roles';
@@ -493,4 +493,60 @@ export async function adminCreateClassAction(
 
   revalidatePath('/admin/classes');
   return { success: true, message: '¡Clase creada exitosamente!' };
+}
+
+
+export async function rejectPaymentAction(paymentId: string): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  if (!paymentId) {
+    return { success: false, error: 'ID de pago no proporcionado.' };
+  }
+
+  // Get payment
+  const payment = await db.query.payments.findFirst({
+    where: eq(payments.id, paymentId),
+  });
+
+  if (!payment) {
+    return { success: false, error: 'Pago no encontrado.' };
+  }
+
+  if (payment.confirmed) {
+    return { success: false, error: 'No se puede rechazar un pago ya confirmado.' };
+  }
+
+  // Get linked user subscription to find the user
+  const userSub = await db.query.userSubscriptions.findFirst({
+    where: eq(userSubscriptions.paymentId, paymentId),
+  });
+
+  // Delete the user subscription and payment (clean slate for the client)
+  if (userSub) {
+    // Delete enrollment records linked to this subscription (if any)
+    await db.delete(classEnrollments).where(eq(classEnrollments.userSubscriptionId, userSub.id));
+    // Delete the user subscription
+    await db.delete(userSubscriptions).where(eq(userSubscriptions.id, userSub.id));
+  }
+
+  // Delete the payment
+  await db.delete(payments).where(eq(payments.id, paymentId));
+
+  // Send notification email to the client
+  if (userSub) {
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userSub.userId),
+    });
+    if (user) {
+      sendPaymentRejectedEmail(user.email, user.username).catch(() => {
+        // Email failures are logged internally
+      });
+    }
+  }
+
+  revalidatePath('/admin/payments');
+  return { success: true, message: 'Pago rechazado y eliminado. El cliente ha sido notificado.' };
 }
