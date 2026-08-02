@@ -117,3 +117,22 @@ export async function sendVerificationEmail(
     `,
   });
 }
+
+
+export async function sendPaymentRejectedEmail(
+  email: string,
+  name: string
+): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'Pago no recibido - The Lab Pilates Studio',
+    html: `
+      <h1>Pago no recibido</h1>
+      <p>Hola ${name},</p>
+      <p>Te informamos que tu pago no pudo ser verificado. Esto puede deberse a que la transferencia no fue recibida o los datos no coinciden.</p>
+      <p>Tu solicitud de suscripción ha sido anulada. Puedes intentar adquirir una nueva suscripción en cualquier momento desde tu cuenta.</p>
+      <p>Si consideras que esto es un error, contacta al estudio directamente.</p>
+      <p>— The Lab Pilates Studio</p>
+    `,
+  });
+}
