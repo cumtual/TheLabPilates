@@ -60,7 +60,7 @@ export default async function AdminClassesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between py-6">
         <h1 className="font-headline text-headline-lg-mobile text-on-surface">
           Gestión de Clases
         </h1>
