@@ -42,19 +42,19 @@ export default function Navbar() {
             className="font-body text-label-caps font-semibold uppercase tracking-[0.1em] text-on-surface-variant hover:text-primary transition-colors duration-300"
             href="#filosofia"
           >
-            Philosophy
+            Filosofia
           </a>
           <a
             className="font-body text-label-caps font-semibold uppercase tracking-[0.1em] text-on-surface-variant hover:text-primary transition-colors duration-300"
             href="#paquetes"
           >
-            Packages
+            Membresias
           </a>
           <a
             className="font-body text-label-caps font-semibold uppercase tracking-[0.1em] text-on-surface-variant hover:text-primary transition-colors duration-300"
             href="#ubicacion"
           >
-            Location
+            Ubicación
           </a>
         </nav>
 

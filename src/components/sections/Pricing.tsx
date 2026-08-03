@@ -39,9 +39,9 @@ const packages = [
     sessions: 'UNLIMITED ACCESS',
     price: '$2,850',
     features: [
-      'Clases Mixtas (All)',
-      'Locker personal',
       'Flexibilidad total',
+      '1 Invitado mensual',
+      '1er Kit de regalo',
     ],
     premium: true,
   },
@@ -57,7 +57,7 @@ export default function Pricing() {
             Tu Evolución
           </p>
           <h2 className="font-headline text-3xl md:text-[48px] mb-6">
-            Planes y Precios
+            Membresías
           </h2>
           <p className="text-[16px] text-on-surface-variant max-w-2xl mx-auto">
             Selecciona el camino que mejor se adapte a tus objetivos. Desde
@@ -104,7 +104,7 @@ export default function Pricing() {
                       {pkg.sessions}
                     </p>
                     <p className="font-headline text-[40px] text-plaster-white">
-                      {pkg.price}
+                      {/* {pkg.price} */}
                     </p>
                   </div>
                 ) : (
@@ -112,7 +112,7 @@ export default function Pricing() {
                     <p className="text-[11px] font-semibold text-primary tracking-widest mb-6">
                       {pkg.sessions}
                     </p>
-                    <p className="font-headline text-[40px] mb-8">{pkg.price}</p>
+                    {/* <p className="font-headline text-[40px] mb-8">{pkg.price}</p> */}
                   </>
                 )}
 

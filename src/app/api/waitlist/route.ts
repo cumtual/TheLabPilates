@@ -24,13 +24,13 @@ export async function POST(request: Request) {
     }
 
     await resend.emails.send({
-      from: 'The Lab Pilates <noreply@thelabpilatesstudio.com.mx>',
+      from: 'The Lab Pilates Studio <noreply@thelabpilatesstudio.com.mx>',
       to: 'thelabpilates77@gmail.com',
-      subject: `Nueva inscripción en lista de espera: ${name}`,
+      subject: `Nueva solicitud de información: ${name}`,
       html: `
         <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 24px;">
           <h2 style="font-family: 'Playfair Display', serif; color: #2A2A2A; margin-bottom: 24px;">
-            Nueva persona en la lista de espera
+            Nueva persona espera información
           </h2>
           <div style="background: #F9F8F6; border-radius: 12px; padding: 24px; margin-bottom: 24px;">
             <p style="margin: 0 0 12px 0; color: #4c463e;">
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
             </p>
           </div>
           <p style="color: #7e766d; font-size: 14px;">
-            Esta persona se registró en la lista de espera de The Lab Pilates Studio.
+            Esta persona se registró en la lista de solicitud de información de The Lab Pilates Studio.
           </p>
         </div>
       `,
