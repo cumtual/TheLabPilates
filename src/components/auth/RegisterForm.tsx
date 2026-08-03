@@ -31,7 +31,7 @@ export function RegisterForm() {
             {state.message}
           </p>
           <Link
-            href="/login"
+            href="/soon"
             className="font-body text-body-md text-primary underline underline-offset-2 hover:text-secondary transition-colors"
           >
             Ir a iniciar sesión
@@ -104,7 +104,7 @@ export function RegisterForm() {
 
       <div className="flex justify-center font-body text-body-md">
         <Link
-          href="/login"
+          href="/soon"
           className="text-primary underline underline-offset-2 hover:text-secondary transition-colors min-h-11 inline-flex items-center"
         >
           ¿Ya tienes cuenta? Inicia sesión
