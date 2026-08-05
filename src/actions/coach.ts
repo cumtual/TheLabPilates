@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { openClasses, classEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
+import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
 
 interface AttendanceRecord {
   enrollmentId: string;
@@ -124,9 +125,10 @@ export async function createClassAction(
   const capacityStr = formData.get('capacity') as string;
   const classType = formData.get('classType') as string;
 
-  // Validate date is in the future
-  const date = new Date(classDate);
-  if (!classDate || isNaN(date.getTime()) || date <= new Date()) {
+  // Interpret datetime-local as America/Mexico_City, or use directly if already has timezone
+  const hasTimezone = classDate && (classDate.includes('Z') || classDate.includes('+') || /T\d{2}:\d{2}.*[-+]\d/.test(classDate));
+  const date = hasTimezone ? new Date(classDate) : parseDateTimeLocalAsMexicoCity(classDate);
+  if (!classDate || !date || isNaN(date.getTime()) || date <= new Date()) {
     return {
       success: false,
       error: 'La fecha debe ser en el futuro.',
