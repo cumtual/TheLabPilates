@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { updateAttendanceAction } from '@/actions/coach';
+import { updateAttendanceAction, completeClassAction } from '@/actions/coach';
 import { Card } from '@/components/ui/Card';
 
 interface EnrollmentRow {
@@ -37,8 +37,11 @@ export function AttendanceSheet({
   });
 
   const [isPending, startTransition] = useTransition();
+  const [isCompleting, startCompleteTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [classCompleted, setClassCompleted] = useState(isCompleted);
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
 
   function handleToggle(enrollmentId: string, status: 'attended' | 'absent') {
     setRecords((prev) => ({ ...prev, [enrollmentId]: status }));
@@ -59,6 +62,22 @@ export function AttendanceSheet({
       const result = await updateAttendanceAction(classId, attendanceRecords);
       if (result.success) {
         setMessage(result.message ?? 'Asistencia registrada exitosamente.');
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  function handleCompleteClass() {
+    setMessage(null);
+    setError(null);
+    setShowCompleteConfirm(false);
+
+    startCompleteTransition(async () => {
+      const result = await completeClassAction(classId);
+      if (result.success) {
+        setClassCompleted(true);
+        setMessage(result.message ?? 'Clase finalizada exitosamente.');
       } else {
         setError(result.error);
       }
@@ -95,7 +114,7 @@ export function AttendanceSheet({
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
-                disabled={isCompleted || isPending}
+                disabled={classCompleted || isPending}
                 onClick={() =>
                   handleToggle(enrollment.enrollmentId, 'attended')
                 }
@@ -110,7 +129,7 @@ export function AttendanceSheet({
               </button>
               <button
                 type="button"
-                disabled={isCompleted || isPending}
+                disabled={classCompleted || isPending}
                 onClick={() => handleToggle(enrollment.enrollmentId, 'absent')}
                 className={`min-h-11 min-w-11 px-3 py-2 rounded-lg font-body text-xs font-medium transition-colors ${
                   records[enrollment.enrollmentId] === 'absent'
@@ -126,7 +145,7 @@ export function AttendanceSheet({
         ))}
       </div>
 
-      {!isCompleted && (
+      {!classCompleted && (
         <button
           type="button"
           disabled={isPending}
@@ -137,9 +156,51 @@ export function AttendanceSheet({
         </button>
       )}
 
-      {isCompleted && (
+      {!classCompleted && (
+        <div className="mt-6 pt-4 border-t border-outline-variant">
+          {showCompleteConfirm ? (
+            <div className="rounded-lg border border-warm-wood/30 bg-warm-wood/10 p-4 space-y-3">
+              <p className="font-body text-sm text-on-surface font-medium">
+                ¿Estás seguro de finalizar esta clase?
+              </p>
+              <p className="font-body text-xs text-on-surface-variant">
+                Una vez finalizada no podrás modificar la asistencia.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={isCompleting}
+                  onClick={handleCompleteClass}
+                  className="flex-1 min-h-11 px-4 py-2 bg-secondary text-white font-body font-semibold rounded-lg hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+                >
+                  {isCompleting ? 'Finalizando...' : 'Sí, finalizar'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isCompleting}
+                  onClick={() => setShowCompleteConfirm(false)}
+                  className="flex-1 min-h-11 px-4 py-2 bg-surface-variant text-on-surface-variant font-body font-semibold rounded-lg hover:bg-surface-container-high transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={isCompleting}
+              onClick={() => setShowCompleteConfirm(true)}
+              className="w-full min-h-11 px-4 py-3 bg-secondary text-white font-body font-semibold rounded-lg hover:bg-secondary/90 disabled:opacity-50 transition-colors"
+            >
+              Finalizar clase
+            </button>
+          )}
+        </div>
+      )}
+
+      {classCompleted && (
         <p className="font-body text-sm text-on-surface-variant text-center">
-          La asistencia ya fue registrada para esta clase.
+          Esta clase ya fue finalizada. La asistencia no puede modificarse.
         </p>
       )}
     </div>
