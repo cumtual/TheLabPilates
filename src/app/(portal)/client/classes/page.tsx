@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
 import { openClasses, classEnrollments, users } from '@/db/schema';
-import { eq, count, and, gt } from 'drizzle-orm';
+import { eq, count, and, gt, notInArray } from 'drizzle-orm';
 import { ClassList, type ClassItem } from '@/components/client/ClassList';
 import { Pagination } from '@/components/ui/Pagination';
 
@@ -40,7 +40,10 @@ export default async function ClientClassesPage({
       })
       .from(openClasses)
       .leftJoin(users, eq(openClasses.coachUserId, users.id))
-      .leftJoin(classEnrollments, eq(openClasses.id, classEnrollments.openClassId))
+      .leftJoin(classEnrollments, and(
+        eq(openClasses.id, classEnrollments.openClassId),
+        notInArray(classEnrollments.status, ['cancelled', 'late_cancelled'])
+      ))
       .where(
         and(
           eq(openClasses.status, 'scheduled'),
