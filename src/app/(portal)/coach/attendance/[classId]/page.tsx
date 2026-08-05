@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
-import { getCoachClassById, getClassEnrollments } from '@/lib/queries/coach';
+import { getCoachClassById, getClassEnrollments, getCancelledEnrollments } from '@/lib/queries/coach';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
 import { Card } from '@/components/ui/Card';
 
@@ -18,9 +18,15 @@ export default async function AttendancePage({
   const session = await getSession();
   if (!session) redirect('/login');
 
-  const { classId } = await params;
+  // Allow both coaches and admins to access this page
+  if (session.role !== 'coach' && session.role !== 'admin') {
+    redirect('/login');
+  }
 
-  const openClass = await getCoachClassById(classId, session.sub);
+  const { classId } = await params;
+  const isAdmin = session.role === 'admin';
+
+  const openClass = await getCoachClassById(classId, session.sub, isAdmin);
 
   if (!openClass) {
     return (
@@ -42,6 +48,7 @@ export default async function AttendancePage({
     : false;
 
   const enrollments = await getClassEnrollments(classId);
+  const cancelledEnrollments = await getCancelledEnrollments(classId);
 
   const typeLabel = classTypeLabels[openClass.classType ?? ''] ?? openClass.classType ?? 'Clase';
   const dateFormatted = openClass.classDate
@@ -113,6 +120,36 @@ export default async function AttendancePage({
           enrollments={enrollments}
           isCompleted={openClass.status === 'completed'}
         />
+      )}
+
+      {/* Sección de cancelaciones */}
+      {cancelledEnrollments.length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-headline text-title-md text-on-surface-variant mb-3">
+            Cancelaciones ({cancelledEnrollments.length})
+          </h2>
+          <div className="space-y-2">
+            {cancelledEnrollments.map((enrollment) => (
+              <Card key={enrollment.enrollmentId} className="flex items-center gap-3 opacity-70">
+                <div className="flex-1 min-w-0">
+                  <p className="font-body text-sm font-semibold text-on-surface truncate">
+                    {enrollment.studentName}
+                  </p>
+                  <p className="font-body text-xs text-on-surface-variant truncate">
+                    {enrollment.studentEmail}
+                  </p>
+                </div>
+                <span className={`font-body text-xs px-2 py-1 rounded ${
+                  enrollment.status === 'late_cancelled'
+                    ? 'bg-error/10 text-error'
+                    : 'bg-surface-container-low text-outline'
+                }`}>
+                  {enrollment.status === 'late_cancelled' ? 'Cancelación tardía' : 'Canceló'}
+                </span>
+              </Card>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
