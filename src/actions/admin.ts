@@ -452,8 +452,13 @@ export async function adminCreateClassAction(
   const classType = formData.get('classType') as string;
   const coachId = formData.get('coachId') as string;
 
+  // Normalize timezone-naive datetime-local values to UTC
+  const normalizedDate = classDate && (classDate.includes('Z') || classDate.includes('+') || /T\d{2}:\d{2}.*[-+]/.test(classDate))
+    ? classDate
+    : classDate + 'Z';
+
   // Validate date is in the future
-  const date = new Date(classDate);
+  const date = new Date(normalizedDate);
   if (!classDate || isNaN(date.getTime()) || date <= new Date()) {
     return { success: false, error: 'La fecha debe ser en el futuro.', field: 'classDate' };
   }
@@ -482,17 +487,21 @@ export async function adminCreateClassAction(
     return { success: false, error: 'Coach no válido.', field: 'coachId' };
   }
 
-  await db.insert(openClasses).values({
-    classDate: date,
-    coachUserId: coachId,
-    capacity,
-    classType: classType as 'yoga' | 'mat_pilates' | 'barre',
-    status: 'scheduled',
-    available: 'available',
-  });
+  try {
+    await db.insert(openClasses).values({
+      classDate: date,
+      coachUserId: coachId,
+      capacity,
+      classType: classType as 'yoga' | 'mat_pilates' | 'barre',
+      status: 'scheduled',
+      available: 'available',
+    });
 
-  revalidatePath('/admin/classes');
-  return { success: true, message: '¡Clase creada exitosamente!' };
+    revalidatePath('/admin/classes');
+    return { success: true, message: '¡Clase creada exitosamente!' };
+  } catch {
+    return { success: false, error: 'Error al crear la clase. Intenta de nuevo.' };
+  }
 }
 
 
