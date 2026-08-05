@@ -16,6 +16,7 @@ import { sendClassCancellationEmail, sendPaymentRejectedEmail } from '@/lib/emai
 import type { ActionResult } from '@/lib/types';
 import { ALL_ROLES } from '@/lib/types/roles';
 import type { UserRole } from '@/lib/types/roles';
+import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
 
 export async function cancelClassAction(classId: string): Promise<ActionResult> {
   const session = await getSession();
@@ -452,14 +453,10 @@ export async function adminCreateClassAction(
   const classType = formData.get('classType') as string;
   const coachId = formData.get('coachId') as string;
 
-  // Normalize timezone-naive datetime-local values to UTC
-  const normalizedDate = classDate && (classDate.includes('Z') || classDate.includes('+') || /T\d{2}:\d{2}.*[-+]/.test(classDate))
-    ? classDate
-    : classDate + 'Z';
-
-  // Validate date is in the future
-  const date = new Date(normalizedDate);
-  if (!classDate || isNaN(date.getTime()) || date <= new Date()) {
+  // Interpret datetime-local as America/Mexico_City, or use directly if already has timezone
+  const hasTimezone = classDate && (classDate.includes('Z') || classDate.includes('+') || /T\d{2}:\d{2}.*[-+]\d/.test(classDate));
+  const date = hasTimezone ? new Date(classDate) : parseDateTimeLocalAsMexicoCity(classDate);
+  if (!classDate || !date || isNaN(date.getTime()) || date <= new Date()) {
     return { success: false, error: 'La fecha debe ser en el futuro.', field: 'classDate' };
   }
 
