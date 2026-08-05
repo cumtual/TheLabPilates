@@ -10,23 +10,17 @@ const classTypeLabels: Record<string, string> = {
   barre: 'Barre',
 };
 
-export default async function AttendancePage({
+export default async function AdminAttendancePage({
   params,
 }: {
   params: Promise<{ classId: string }>;
 }) {
   const session = await getSession();
-  if (!session) redirect('/login');
-
-  // Allow both coaches and admins to access this page
-  if (session.role !== 'coach' && session.role !== 'admin') {
-    redirect('/login');
-  }
+  if (!session || session.role !== 'admin') redirect('/login');
 
   const { classId } = await params;
-  const isAdmin = session.role === 'admin';
 
-  const openClass = await getCoachClassById(classId, session.sub, isAdmin);
+  const openClass = await getCoachClassById(classId, session.sub, true);
 
   if (!openClass) {
     return (
@@ -36,7 +30,7 @@ export default async function AttendancePage({
         </h1>
         <Card>
           <p className="font-body text-on-surface-variant text-center py-8">
-            Clase no encontrada o no tienes permisos para verla.
+            Clase no encontrada.
           </p>
         </Card>
       </div>
@@ -64,7 +58,7 @@ export default async function AttendancePage({
     : 'Sin fecha';
 
   return (
-    <div className='py-6'>
+    <div className="py-6">
       <h1 className="font-headline text-headline-lg-mobile md:text-headline-lg text-on-surface mb-2">
         Asistencia
       </h1>

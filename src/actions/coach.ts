@@ -41,7 +41,8 @@ export async function updateAttendanceAction(
     return { success: false, error: 'Clase no encontrada.' };
   }
 
-  if (openClass.coachUserId !== session.sub) {
+  // Admins can manage any class; coaches can only manage their own
+  if (session.role !== 'admin' && openClass.coachUserId !== session.sub) {
     return { success: false, error: 'No tienes permisos para esta clase.' };
   }
 
