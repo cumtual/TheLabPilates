@@ -46,6 +46,7 @@ export default async function AttendancePage({
   const typeLabel = classTypeLabels[openClass.classType ?? ''] ?? openClass.classType ?? 'Clase';
   const dateFormatted = openClass.classDate
     ? new Date(openClass.classDate).toLocaleDateString('es-MX', {
+        timeZone: 'America/Mexico_City',
         weekday: 'long',
         day: 'numeric',
         month: 'long',

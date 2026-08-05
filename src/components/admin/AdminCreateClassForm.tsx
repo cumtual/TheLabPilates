@@ -34,6 +34,7 @@ function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   return d.toLocaleDateString('es-MX', {
+    timeZone: 'America/Mexico_City',
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -89,10 +90,14 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
 
     const formData = new FormData(formRef.current);
     startTransition(async () => {
-      const result = await adminCreateClassAction(null, formData);
-      setState(result);
-      if (result.success) {
-        formRef.current?.reset();
+      try {
+        const result = await adminCreateClassAction(null, formData);
+        setState(result);
+        if (result.success) {
+          formRef.current?.reset();
+        }
+      } catch {
+        setState({ success: false, error: 'Error al crear la clase. Intenta de nuevo.' });
       }
     });
   }

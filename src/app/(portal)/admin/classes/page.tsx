@@ -2,8 +2,12 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { openClasses, classEnrollments, users, userSubscriptions } from '@/db/schema';
 import ClassManagement from '@/components/admin/ClassManagement';
+import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
 
 export default async function AdminClassesPage() {
+  // Auto-complete past scheduled classes (lazy evaluation - secondary mechanism)
+  await autoCompletePassedClasses();
+
   // Fetch ALL classes with coach name (no server pagination — client handles filters + pagination)
   const allClasses = await db
     .select({
