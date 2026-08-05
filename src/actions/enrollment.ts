@@ -1,6 +1,6 @@
 'use server';
 
-import { eq, and, sql, count } from 'drizzle-orm';
+import { eq, and, sql, count, notInArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { classEnrollments, openClasses, userSubscriptions, payments } from '@/db/schema';
@@ -35,24 +35,31 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       )
     );
 
-  // Find one with confirmed payment
-  const activeSub = userSubs.find((row) => row.payment?.confirmed === true);
+  // Find a usable subscription: confirmed payment, not expired, has credits
+  const now = new Date();
+  const activeSub = userSubs.find((row) => {
+    if (!row.payment?.confirmed) return false;
+    if (row.userSub.expirationDate && new Date(row.userSub.expirationDate) < now) return false;
+    if (!row.userSub.daysRemaining || row.userSub.daysRemaining <= 0) return false;
+    return true;
+  });
 
   if (!activeSub) {
-    return { success: false, error: 'No tienes una suscripción activa.' };
+    // Give a more specific error message
+    const hasAnySub = userSubs.some((row) => row.payment?.confirmed === true);
+    if (!hasAnySub) {
+      return { success: false, error: 'No tienes una suscripción activa.' };
+    }
+    const hasExpired = userSubs.some((row) =>
+      row.payment?.confirmed && row.userSub.expirationDate && new Date(row.userSub.expirationDate) < now
+    );
+    if (hasExpired) {
+      return { success: false, error: 'Tu suscripción ha expirado.' };
+    }
+    return { success: false, error: 'No tienes créditos de sesión disponibles.' };
   }
 
   const userSub = activeSub.userSub;
-
-  // Check expiration
-  if (userSub.expirationDate && new Date(userSub.expirationDate) < new Date()) {
-    return { success: false, error: 'Tu suscripción ha expirado.' };
-  }
-
-  // Check session credits
-  if (!userSub.daysRemaining || userSub.daysRemaining <= 0) {
-    return { success: false, error: 'No tienes créditos de sesión disponibles.' };
-  }
 
   // 2. Get the class and validate
   const openClass = await db.query.openClasses.findFirst({
@@ -71,26 +78,36 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
     return { success: false, error: 'Esta clase ya pasó.' };
   }
 
-  // 3. Check capacity
+  // 3. Check capacity (only count active enrollments, not cancelled ones)
   const [enrollmentCount] = await db
     .select({ count: count() })
     .from(classEnrollments)
-    .where(eq(classEnrollments.openClassId, classId));
+    .where(
+      and(
+        eq(classEnrollments.openClassId, classId),
+        notInArray(classEnrollments.status, ['cancelled', 'late_cancelled'])
+      )
+    );
 
   if (enrollmentCount.count >= (openClass.capacity ?? 0)) {
     return { success: false, error: 'Clase llena.' };
   }
 
-  // 4. Check duplicate enrollment
-  const existing = await db.query.classEnrollments.findFirst({
-    where: and(
-      eq(classEnrollments.openClassId, classId),
-      eq(classEnrollments.userSubscriptionId, userSub.id)
-    ),
-  });
+  // 4. Check duplicate enrollment (by user, not subscription — prevent same user enrolling twice)
+  const existingEnrollments = await db
+    .select({ id: classEnrollments.id })
+    .from(classEnrollments)
+    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+    .where(
+      and(
+        eq(classEnrollments.openClassId, classId),
+        eq(userSubscriptions.userId, session.sub),
+        notInArray(classEnrollments.status, ['cancelled', 'late_cancelled'])
+      )
+    );
 
-  if (existing) {
-    return { success: false, error: 'Ya tienes una reservación para esta clase.' };
+  if (existingEnrollments.length > 0) {
+    return { success: false, error: 'Ya estás inscrito en esta clase.' };
   }
 
   // 5. Atomic transaction: create enrollment + decrement days_remaining
@@ -108,6 +125,10 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
     `);
   });
 
+  revalidatePath('/client');
+  revalidatePath('/client/classes');
+  revalidatePath('/client/reservations');
+  revalidatePath('/client/subscription');
   return { success: true, message: '¡Reservación confirmada!' };
 }
 
