@@ -57,7 +57,7 @@ export default async function AttendancePage({
     : 'Sin fecha';
 
   return (
-    <div>
+    <div className='py-6'>
       <h1 className="font-headline text-headline-lg-mobile md:text-headline-lg text-on-surface mb-2">
         Asistencia
       </h1>
