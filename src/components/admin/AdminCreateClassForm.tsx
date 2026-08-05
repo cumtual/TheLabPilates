@@ -89,10 +89,14 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
 
     const formData = new FormData(formRef.current);
     startTransition(async () => {
-      const result = await adminCreateClassAction(null, formData);
-      setState(result);
-      if (result.success) {
-        formRef.current?.reset();
+      try {
+        const result = await adminCreateClassAction(null, formData);
+        setState(result);
+        if (result.success) {
+          formRef.current?.reset();
+        }
+      } catch {
+        setState({ success: false, error: 'Error al crear la clase. Intenta de nuevo.' });
       }
     });
   }
