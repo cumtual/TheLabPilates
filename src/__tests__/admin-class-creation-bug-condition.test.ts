@@ -188,14 +188,19 @@ describe('Bug Condition 2: Timezone mismatch → valid future datetime-local sho
     });
   });
 
-  it('PROPERTY: datetime-local string "2025-07-15T10:00" normalized to UTC IS genuinely past when server time is 11:00 UTC — should be correctly rejected', async () => {
-    // After the fix, datetime-local values are normalized to UTC by appending 'Z'.
-    // "2025-07-15T10:00" → "2025-07-15T10:00Z"
-    // When server time is 2025-07-15T11:00Z, 10:00Z IS in the past.
-    // This is CORRECT behavior — the date should be rejected.
+  it('PROPERTY: datetime-local string "2025-07-15T10:00" interpreted as Mexico City time is correctly handled', async () => {
+    // After the timezone fix, datetime-local values are interpreted as America/Mexico_City.
+    // "2025-07-15T10:00" → 10:00 AM Mexico City = 16:00 UTC (CDT, UTC-5 in summer)
+    // When server time is 2025-07-15T11:00Z, 16:00 UTC is in the FUTURE.
+    // This is CORRECT behavior — the date should be ACCEPTED.
 
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-07-15T11:00:00Z'));
+
+    // Mock db.insert() to succeed since we expect the date to pass validation
+    (db.insert as ReturnType<typeof vi.fn>).mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
 
     const formData = new FormData();
     formData.set('classDate', '2025-07-15T10:00'); // No Z suffix - datetime-local format
@@ -205,11 +210,9 @@ describe('Bug Condition 2: Timezone mismatch → valid future datetime-local sho
 
     const result = await adminCreateClassAction(null, formData);
 
-    // EXPECTED behavior after fix: The datetime-local is normalized to UTC ("2025-07-15T10:00Z")
-    // Since 10:00 UTC < 11:00 UTC (current time), this date IS genuinely in the past.
-    // The fix correctly rejects it — this is NOT a timezone bug, it's correct validation.
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('La fecha debe ser en el futuro.');
+    // EXPECTED behavior after timezone fix: The datetime-local is interpreted as Mexico City time.
+    // 10:00 Mexico City = 16:00 UTC, which is after 11:00 UTC (current time) → future → accepted
+    expect(result.success).toBe(true);
 
     vi.useRealTimers();
   });
