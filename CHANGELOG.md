@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.2.0](https://github.com/cumtual/TheLabPilates/compare/v1.1.1...v1.2.0) (2026-08-03)
+
+
+### Features
+
+* **admin:** add payment rejection action with email notification ([dcd579c](https://github.com/cumtual/TheLabPilates/commit/dcd579c33646aa7ed9e2c9557a8625f62daf2579))
+* **admin:** add payment rejection workflow with confirmation modal ([089d097](https://github.com/cumtual/TheLabPilates/commit/089d097d87562ecf5e8e5bfe40dfe242d2be2fe2))
+* **auth:** add authentication, authorization, and multi-role portal system ([22de6be](https://github.com/cumtual/TheLabPilates/commit/22de6be6d3dc9d398720562e0908e854fa8b42ff))
+* **auth:** implement email verification workflow ([7cffd73](https://github.com/cumtual/TheLabPilates/commit/7cffd73850f97064f064d206367af9577aabe2ce))
+* **auth:** implement email verification workflow ([446cee8](https://github.com/cumtual/TheLabPilates/commit/446cee8fe4d569f4a1ba5a1109abd858a5cde26b))
+* **client:** add credits exhausted subscription state ([3a43dc9](https://github.com/cumtual/TheLabPilates/commit/3a43dc9fdc392cbd0f6566b1bf3f238e3fbe4ef1))
+* **client:** add credits exhausted subscription state ([00a6be9](https://github.com/cumtual/TheLabPilates/commit/00a6be9a2a5c66781982c45b0e7c64def096df5e))
+* **email:** add payment rejected email notification ([4a248b4](https://github.com/cumtual/TheLabPilates/commit/4a248b4aa80355d125c2897fa5346abf25ead03e))
+* **schedule:** add client-side schedule component with day picker ([1469a4a](https://github.com/cumtual/TheLabPilates/commit/1469a4ae13df8c38d449aaa87acf1c66ec479866))
+* **schedule:** migrate to server-side rendering with database queries ([6ed0785](https://github.com/cumtual/TheLabPilates/commit/6ed078502d37b27b11726d21f535a42ced55852e))
+
+
+### Bug Fixes
+
+* **auth:** redirect login links to coming soon landing in register form ([3aad23c](https://github.com/cumtual/TheLabPilates/commit/3aad23cc631b33c1af6b40b7e65562a25080b44a))
+* **auth:** redirect password reset links to coming soon landing ([fc3354c](https://github.com/cumtual/TheLabPilates/commit/fc3354c7e47779b391cdf47227f513d201688c31))
+* **auth:** redirect verify-email page to coming soon landing ([30883d2](https://github.com/cumtual/TheLabPilates/commit/30883d2f3c49f1f4fee3985aa8c5afeaef076455))
+* **email:** update sender name and email configuration ([ddaf979](https://github.com/cumtual/TheLabPilates/commit/ddaf97909e758c7ed8b9c3adf27d0a468d18ceb5))
+* **email:** update sender name and email configuration ([11c5ecb](https://github.com/cumtual/TheLabPilates/commit/11c5ecb9742f0578d5a5bb60c477fe124eb5634a))
+* **hero:** redirect lab pass reservation link to coming soon landing ([ee75977](https://github.com/cumtual/TheLabPilates/commit/ee75977316cd5a774bb4917c6e4b47946d47da64))
+* **location:** hide upcoming opening date and add email link ([8fe020f](https://github.com/cumtual/TheLabPilates/commit/8fe020f2d47bac4d9ec4efc39a96e132f90e801f))
+* **mat-pilates:** update section image to lab assets ([7a8b035](https://github.com/cumtual/TheLabPilates/commit/7a8b035ec5ddc58269377bbc66c2b56b965e5529))
+* **navbar:** update navigation labels to spanish and redirect login to coming soon ([00025b3](https://github.com/cumtual/TheLabPilates/commit/00025b370b2deb091b1f7cc66cf9e7409fc8406e))
+* **pricing:** update membership section labels and redirect enrollment ([927cf98](https://github.com/cumtual/TheLabPilates/commit/927cf98ab03351ae8fe255224a0b57ce02c50b1c))
+* **schedule:** redirect schedule section to coming soon landing ([db222a5](https://github.com/cumtual/TheLabPilates/commit/db222a5d4009f1f20f2f951b11966d6c8e9e35d8))
+* **seo:** update robots.txt configuration and fix sitemap URL ([35f2de5](https://github.com/cumtual/TheLabPilates/commit/35f2de5f690d0730d2038d4ece24e7eb9699a2f1))
+* **seo:** update robots.txt configuration and fix sitemap URL ([9f3b5db](https://github.com/cumtual/TheLabPilates/commit/9f3b5db8229c9e14fd96e48e2acc487a4246f862))
+* **waitlist:** update email messaging for information requests ([981b931](https://github.com/cumtual/TheLabPilates/commit/981b9314737fb0968e479257c50a47c170d43b7e))
+* **waitlist:** update messaging to reflect information request workflow ([ea6e0c4](https://github.com/cumtual/TheLabPilates/commit/ea6e0c4360731bfd08c22e0d9c75b2331932ad41))
+
 ## [1.1.1](https://github.com/cumtual/TheLabPilates/compare/v1.1.0...v1.1.1) (2026-07-26)
 
 
