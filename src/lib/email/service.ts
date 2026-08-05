@@ -77,6 +77,7 @@ export async function sendClassCancellationEmail(
   classInfo: { type: string; date: Date; coachName: string }
 ): Promise<void> {
   const formattedDate = classInfo.date.toLocaleDateString('es-MX', {
+    timeZone: 'America/Mexico_City',
     weekday: 'long',
     year: 'numeric',
     month: 'long',
