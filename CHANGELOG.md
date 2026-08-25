@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.3.0](https://github.com/cumtual/TheLabPilates/compare/v1.2.0...v1.3.0) (2026-08-05)
+
+
+### Features
+
+* **admin:** add attendance link to class management page ([7592eac](https://github.com/cumtual/TheLabPilates/commit/7592eac30423c22a40921d5bd947e15480da4898))
+* **admin:** add attendance management page for admin users ([745a247](https://github.com/cumtual/TheLabPilates/commit/745a247c8b0e2e198927eb801b6a5054e5be2d2c))
+* **client:** add next class preview to dashboard ([b02e012](https://github.com/cumtual/TheLabPilates/commit/b02e0124345b9b53b99e8c8ae2e13a53ab34daf9))
+* **coach:** add admin class access and cancelled enrollment queries ([12d6e16](https://github.com/cumtual/TheLabPilates/commit/12d6e16a7415457baf451b65ecc91b361cdc4513))
+* **coach:** add cancelled enrollments section to attendance page ([69c3a18](https://github.com/cumtual/TheLabPilates/commit/69c3a1805adbb5ed53ba8963e7b789534e5b1f8d))
+* **coach:** add class completion workflow to attendance sheet ([440a050](https://github.com/cumtual/TheLabPilates/commit/440a0507b07c9d156208db96a3bae41479a3adb5))
+* **enrollment:** improve subscription validation and prevent duplicate enrollments ([f1401ac](https://github.com/cumtual/TheLabPilates/commit/f1401acc514f595c173e083a9f480975941b35aa))
+
+
+### Bug Fixes
+
+* **admin:** add Mexico City timezone to date formatting in class creation form ([2bccf55](https://github.com/cumtual/TheLabPilates/commit/2bccf5521fc7203ed50f902f6fa56331a2bb3f74))
+* **admin:** exclude cancelled enrollments from class management page ([680ef3e](https://github.com/cumtual/TheLabPilates/commit/680ef3e362323cef49e5a92b8dca2a627140c7e4))
+* **admin:** parse datetime-local as Mexico City timezone for class creation ([be63f0e](https://github.com/cumtual/TheLabPilates/commit/be63f0eac5c27e2980558c9642c0e5f1f7edd623))
+* **client:** exclude cancelled enrollments from class list query ([c13aa38](https://github.com/cumtual/TheLabPilates/commit/c13aa385aa28381f1d3dc7f744280b18b9fffe67))
+* **coach:** add Mexico City timezone to date formatting in class creation form ([2e12073](https://github.com/cumtual/TheLabPilates/commit/2e12073c38184c9d147d90c5b45d4408b41bd918))
+* **coach:** allow admins to manage attendance for any class ([9b5c3e4](https://github.com/cumtual/TheLabPilates/commit/9b5c3e4c4c3762169c0efb5fa7e18e464930136c))
+* **coach:** parse datetime as Mexico City timezone for attendance page ([66feca2](https://github.com/cumtual/TheLabPilates/commit/66feca2dc579394fd3d07ae4af45391369922c16))
+* **coach:** parse datetime-local as Mexico City timezone for class creation ([fbc3bf3](https://github.com/cumtual/TheLabPilates/commit/fbc3bf3cd0909bf3e9084e89bd4055ef407b4244))
+* **date:** add timezone awareness to all date formatting functions ([982374d](https://github.com/cumtual/TheLabPilates/commit/982374d59929f66da02637a06883f287d18f3880))
+* **email:** add Mexico City timezone to date formatting in class cancellation email ([e591862](https://github.com/cumtual/TheLabPilates/commit/e591862266f66aa86633dff491c9e9f0bf609f65))
+* resolve conflict by removing package-lock.json in favor of pnpm ([10fc1a8](https://github.com/cumtual/TheLabPilates/commit/10fc1a86b684c874b399180e82a6b82d95f29593))
+
 ## [1.2.0](https://github.com/cumtual/TheLabPilates/compare/v1.1.1...v1.2.0) (2026-08-03)
 
 
