@@ -5,6 +5,7 @@ import { adminCreateClassAction } from '@/actions/admin';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
+import { TIMEZONE } from '@/lib/utils/date';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
 
@@ -41,6 +42,7 @@ function formatDateTime(dateStr: string): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: TIMEZONE,
   });
 }
 
