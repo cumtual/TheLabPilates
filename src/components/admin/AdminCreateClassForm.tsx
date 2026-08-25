@@ -35,14 +35,13 @@ function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   return d.toLocaleDateString('es-MX', {
-    timeZone: 'America/Mexico_City',
+    timeZone: TIMEZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: TIMEZONE,
   });
 }
 

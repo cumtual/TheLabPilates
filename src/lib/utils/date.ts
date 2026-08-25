@@ -2,11 +2,6 @@
 export const TIMEZONE = 'America/Mexico_City';
 
 /**
- * Timezone del negocio. Todas las fechas se interpretan y muestran en este timezone.
- */
-export const BUSINESS_TIMEZONE = 'America/Mexico_City';
-
-/**
  * Formatea una fecha de forma amigable para el usuario.
  * Siempre muestra en horario America/Mexico_City.
  * Ejemplo: "Lunes 28 de julio, 2025 — 09:00"
@@ -17,20 +12,18 @@ export function formatFriendlyDate(date: Date | string | null): string {
   if (isNaN(d.getTime())) return 'Fecha inválida';
 
   const formatted = d.toLocaleDateString('es-MX', {
-    timeZone: BUSINESS_TIMEZONE,
+    timeZone: TIMEZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    timeZone: TIMEZONE,
   });
 
   const time = d.toLocaleTimeString('es-MX', {
-    timeZone: BUSINESS_TIMEZONE,
+    timeZone: TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: TIMEZONE,
   });
 
   // Capitalizar primera letra
@@ -98,8 +91,6 @@ export function formatRelativeDate(
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';
 
-  const now = new Date();
-
   // Get calendar date strings in Mexico City timezone using en-CA for YYYY-MM-DD format
   const dateFormatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: TIMEZONE,
@@ -123,4 +114,25 @@ export function formatRelativeDate(
   if (diffDays < -1 && diffDays >= -7) return `Hace ${Math.abs(diffDays)} días`;
 
   return '';
+}
+
+/**
+ * Interpreta un valor de datetime-local (sin timezone) como hora de Ciudad de México.
+ * Convierte "2025-07-28T09:00" → Date object representing 2025-07-28T09:00:00 in America/Mexico_City.
+ *
+ * Mexico City is UTC-6 year-round (no DST since Oct 2022).
+ */
+export function parseDateTimeLocalAsMexicoCity(dateTimeLocal: string): Date {
+  if (!dateTimeLocal) return new Date(NaN);
+
+  // datetime-local format: "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS"
+  // Append Mexico City offset (UTC-6, no DST since 2022)
+  // Note: For historical dates before Oct 2022, this could be off by 1h during summer.
+  // For current/future dates this is correct.
+  const withOffset =
+    dateTimeLocal.includes('+') || dateTimeLocal.includes('Z')
+      ? dateTimeLocal
+      : `${dateTimeLocal}:00-06:00`;
+
+  return new Date(withOffset);
 }
