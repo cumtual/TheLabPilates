@@ -1,3 +1,6 @@
+/** Timezone constant — all date rendering normalizes to Mexico City */
+export const TIMEZONE = 'America/Mexico_City';
+
 /**
  * Formatea una fecha de forma amigable para el usuario.
  * Ejemplo: "Lunes 28 de julio, 2025 — 09:00"
@@ -12,12 +15,14 @@ export function formatFriendlyDate(date: Date | string | null): string {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
+    timeZone: TIMEZONE,
   });
 
   const time = d.toLocaleTimeString('es-MX', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    timeZone: TIMEZONE,
   });
 
   // Capitalizar primera letra
@@ -32,9 +37,16 @@ export function formatShortDate(date: Date | string | null): string {
   const d = new Date(date);
   if (isNaN(d.getTime())) return '--/--/----';
 
-  const day = d.getDate().toString().padStart(2, '0');
-  const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const year = d.getFullYear();
+  const parts = new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: TIMEZONE,
+  }).formatToParts(d);
+
+  const day = parts.find((p) => p.type === 'day')!.value;
+  const month = parts.find((p) => p.type === 'month')!.value;
+  const year = parts.find((p) => p.type === 'year')!.value;
   return `${day}/${month}/${year}`;
 }
 
@@ -46,11 +58,21 @@ export function formatShortDateTime(date: Date | string | null): string {
   const d = new Date(date);
   if (isNaN(d.getTime())) return '--/--/---- — --:--';
 
-  const day = d.getDate().toString().padStart(2, '0');
-  const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const year = d.getFullYear();
-  const hours = d.getHours().toString().padStart(2, '0');
-  const minutes = d.getMinutes().toString().padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: TIMEZONE,
+  }).formatToParts(d);
+
+  const day = parts.find((p) => p.type === 'day')!.value;
+  const month = parts.find((p) => p.type === 'month')!.value;
+  const year = parts.find((p) => p.type === 'year')!.value;
+  const hours = parts.find((p) => p.type === 'hour')!.value;
+  const minutes = parts.find((p) => p.type === 'minute')!.value;
   return `${day}/${month}/${year} — ${hours}:${minutes}`;
 }
 
@@ -63,8 +85,22 @@ export function formatRelativeDate(date: Date | string | null): string {
   if (isNaN(d.getTime())) return '';
 
   const now = new Date();
-  const diffMs = d.getTime() - now.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  // Get calendar date strings in Mexico City timezone using en-CA for YYYY-MM-DD format
+  const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const nowDateStr = dateFormatter.format(now); // e.g. "2025-07-28"
+  const targetDateStr = dateFormatter.format(d); // e.g. "2025-07-29"
+
+  // Parse into Date objects at midnight for calendar day comparison
+  const nowDay = new Date(nowDateStr + 'T00:00:00');
+  const targetDay = new Date(targetDateStr + 'T00:00:00');
+  const diffDays = Math.round((targetDay.getTime() - nowDay.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) return 'Hoy';
   if (diffDays === 1) return 'Mañana';
