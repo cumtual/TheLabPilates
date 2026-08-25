@@ -1,9 +1,13 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, notInArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { openClasses, classEnrollments, users, userSubscriptions } from '@/db/schema';
 import ClassManagement from '@/components/admin/ClassManagement';
+import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
 
 export default async function AdminClassesPage() {
+  // Auto-complete past scheduled classes (lazy evaluation - secondary mechanism)
+  await autoCompletePassedClasses();
+
   // Fetch ALL classes with coach name (no server pagination — client handles filters + pagination)
   const allClasses = await db
     .select({
@@ -19,7 +23,7 @@ export default async function AdminClassesPage() {
     .leftJoin(users, eq(openClasses.coachUserId, users.id))
     .orderBy(desc(openClasses.classDate));
 
-  // Fetch all enrollments with student info
+  // Fetch all enrollments with student info (excluding cancelled)
   const allEnrollments = await db
     .select({
       classId: classEnrollments.openClassId,
@@ -29,7 +33,8 @@ export default async function AdminClassesPage() {
     })
     .from(classEnrollments)
     .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
-    .innerJoin(users, eq(userSubscriptions.userId, users.id));
+    .innerJoin(users, eq(userSubscriptions.userId, users.id))
+    .where(notInArray(classEnrollments.status, ['cancelled', 'late_cancelled']));
 
   // Group enrollments by class
   const enrollmentsByClass = new Map<string, { name: string; email: string; status: string | null }[]>();

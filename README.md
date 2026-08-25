@@ -99,7 +99,7 @@ src/
 ### Prerrequisitos
 
 - [Node.js](https://nodejs.org/) 18+ (recomendado: 20 LTS)
-- npm, yarn o pnpm
+- [pnpm](https://pnpm.io/) — se activa automáticamente con `corepack enable`
 
 ### Instalación
 
@@ -108,14 +108,17 @@ src/
 git clone https://github.com/thelabpilates/frontend.git
 cd frontend
 
+# Activar pnpm via Corepack (solo la primera vez)
+corepack enable
+
 # Instalar dependencias
-npm install
+pnpm install
 ```
 
 ### Desarrollo
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Abre [http://localhost:3000](http://localhost:3000) en tu navegador para ver el resultado.
@@ -124,10 +127,10 @@ Abre [http://localhost:3000](http://localhost:3000) en tu navegador para ver el 
 
 | Comando | Descripción |
 |:---|:---|
-| `npm run dev` | Inicia el servidor de desarrollo con hot reload |
-| `npm run build` | Genera una build de producción optimizada |
-| `npm run start` | Inicia el servidor de producción |
-| `npm run lint` | Ejecuta ESLint para verificar código |
+| `pnpm dev` | Inicia el servidor de desarrollo con hot reload |
+| `pnpm build` | Genera una build de producción optimizada |
+| `pnpm start` | Inicia el servidor de producción |
+| `pnpm lint` | Ejecuta ESLint para verificar código |
 
 ---
 
@@ -163,13 +166,13 @@ El proyecto incluye tests unitarios con **Vitest** y **Testing Library**:
 
 ```bash
 # Ejecutar todos los tests
-npx vitest run
+pnpm vitest --run
 
 # Ejecutar tests en modo watch
-npx vitest
+pnpm vitest
 
 # Ejecutar con coverage
-npx vitest run --coverage
+pnpm vitest --run --coverage
 ```
 
 Actualmente existen **16 tests** para el componente `Button`, cubriendo:
@@ -258,8 +261,8 @@ El proyecto está optimizado para desplegue en Vercel:
 ### Build de Producción
 
 ```bash
-npm run build
-npm run start
+pnpm build
+pnpm start
 ```
 
 ---

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { cancelClassAction } from '@/actions/admin';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
@@ -215,18 +216,27 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
                   </div>
 
                   {/* Toggle inscritos */}
-                  {classItem.enrolledStudents.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(classItem.id)}
-                      className="mt-3 inline-flex items-center gap-1 font-body text-sm text-primary font-medium hover:underline min-h-11"
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    {classItem.enrolledStudents.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(classItem.id)}
+                        className="inline-flex items-center gap-1 font-body text-sm text-primary font-medium hover:underline min-h-11"
+                      >
+                        <span className="material-symbols-outlined text-[18px] transition-transform" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                          expand_more
+                        </span>
+                        {isExpanded ? 'Ocultar inscritos' : `Ver inscritos (${classItem.enrolledStudents.length})`}
+                      </button>
+                    )}
+                    <Link
+                      href={`/admin/attendance/${classItem.id}`}
+                      className="inline-flex items-center gap-1 font-body text-sm text-secondary font-medium hover:underline min-h-11"
                     >
-                      <span className="material-symbols-outlined text-[18px] transition-transform" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                        expand_more
-                      </span>
-                      {isExpanded ? 'Ocultar inscritos' : `Ver inscritos (${classItem.enrolledStudents.length})`}
-                    </button>
-                  )}
+                      <span className="material-symbols-outlined text-[18px]">assignment</span>
+                      Asistencia
+                    </Link>
+                  </div>
                 </div>
 
                 {/* Lista de inscritos expandible */}

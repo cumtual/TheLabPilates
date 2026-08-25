@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { openClasses, classEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
+import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
 
 interface AttendanceRecord {
   enrollmentId: string;
@@ -40,7 +41,8 @@ export async function updateAttendanceAction(
     return { success: false, error: 'Clase no encontrada.' };
   }
 
-  if (openClass.coachUserId !== session.sub) {
+  // Admins can manage any class; coaches can only manage their own
+  if (session.role !== 'admin' && openClass.coachUserId !== session.sub) {
     return { success: false, error: 'No tienes permisos para esta clase.' };
   }
 
@@ -57,13 +59,55 @@ export async function updateAttendanceAction(
       .where(eq(classEnrollments.id, record.enrollmentId));
   }
 
+  return { success: true, message: 'Asistencia registrada exitosamente.' };
+}
+
+export async function completeClassAction(
+  classId: string
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: 'No autenticado.' };
+  }
+  if (session.role !== 'coach' && session.role !== 'admin') {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  if (!classId) {
+    return { success: false, error: 'ID de clase no proporcionado.' };
+  }
+
+  // Get the class and verify ownership
+  const openClass = await db.query.openClasses.findFirst({
+    where: eq(openClasses.id, classId),
+  });
+
+  if (!openClass) {
+    return { success: false, error: 'Clase no encontrada.' };
+  }
+
+  // Admins can complete any class; coaches can only complete their own
+  if (session.role !== 'admin' && openClass.coachUserId !== session.sub) {
+    return { success: false, error: 'No tienes permisos para esta clase.' };
+  }
+
+  // Validate class date is in the past
+  if (!openClass.classDate || new Date(openClass.classDate) > new Date()) {
+    return { success: false, error: 'No puedes completar una clase futura.' };
+  }
+
+  // Verify class status is 'scheduled'
+  if (openClass.status !== 'scheduled') {
+    return { success: false, error: 'Solo se pueden completar clases programadas.' };
+  }
+
   // Mark class as completed
   await db
     .update(openClasses)
     .set({ status: 'completed' })
     .where(eq(openClasses.id, classId));
 
-  return { success: true, message: 'Asistencia registrada exitosamente.' };
+  return { success: true, message: 'Clase completada exitosamente.' };
 }
 
 export async function createClassAction(
@@ -82,9 +126,10 @@ export async function createClassAction(
   const capacityStr = formData.get('capacity') as string;
   const classType = formData.get('classType') as string;
 
-  // Validate date is in the future
-  const date = new Date(classDate);
-  if (!classDate || isNaN(date.getTime()) || date <= new Date()) {
+  // Interpret datetime-local as America/Mexico_City, or use directly if already has timezone
+  const hasTimezone = classDate && (classDate.includes('Z') || classDate.includes('+') || /T\d{2}:\d{2}.*[-+]\d/.test(classDate));
+  const date = hasTimezone ? new Date(classDate) : parseDateTimeLocalAsMexicoCity(classDate);
+  if (!classDate || !date || isNaN(date.getTime()) || date <= new Date()) {
     return {
       success: false,
       error: 'La fecha debe ser en el futuro.',

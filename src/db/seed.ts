@@ -8,7 +8,7 @@
  *
  * Requisitos:
  *   - DATABASE_URL_DIRECT debe estar definida en .env.local
- *   - Las tablas deben existir (ejecutar `npm run db:push` primero)
+ *   - Las tablas deben existir (ejecutar `pnpm db:push` primero)
  *
  * Credenciales de prueba:
  *   Admin:  admin@thelabpilates.com / admin1234

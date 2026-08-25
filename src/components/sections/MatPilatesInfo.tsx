@@ -55,7 +55,7 @@ export default function MatPilatesInfo() {
         {/* Image */}
         <div className="order-1 lg:order-2 relative rounded-2xl overflow-hidden shadow-2xl h-[500px]">
           <Image
-            src="/images/mat-pilates.png"
+            src="/images/the_lab_secition.png"
             alt="Minimalist Bala pilates equipment including weights and rings on a light-toned floor with soft natural lighting"
             fill
             quality={90}

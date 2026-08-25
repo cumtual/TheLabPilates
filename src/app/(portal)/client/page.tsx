@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { userSubscriptions, payments, subscriptions } from '@/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { userSubscriptions, payments, subscriptions, classEnrollments, openClasses, users } from '@/db/schema';
+import { eq, desc, and, gt } from 'drizzle-orm';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { ClientDashboardError } from '@/components/client/ClientDashboardError';
+import { BUSINESS_TIMEZONE } from '@/lib/utils/date';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -87,15 +88,51 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
   return { type: 'none' };
 }
 
+const classTypeLabels: Record<string, string> = {
+  yoga: 'Yoga',
+  mat_pilates: 'Mat Pilates',
+  barre: 'Barre',
+};
+
+async function getNextClass(userId: string) {
+  const now = new Date();
+
+  const result = await db
+    .select({
+      classDate: openClasses.classDate,
+      classType: openClasses.classType,
+      coachName: users.username,
+    })
+    .from(classEnrollments)
+    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+    .innerJoin(openClasses, eq(classEnrollments.openClassId, openClasses.id))
+    .leftJoin(users, eq(openClasses.coachUserId, users.id))
+    .where(
+      and(
+        eq(userSubscriptions.userId, userId),
+        eq(classEnrollments.status, 'pending'),
+        eq(openClasses.status, 'scheduled'),
+        gt(openClasses.classDate, now)
+      )
+    )
+    .orderBy(openClasses.classDate)
+    .limit(1);
+
+  if (result.length === 0) return null;
+  return result[0];
+}
+
 export default async function ClientDashboardPage() {
   const session = await getSession();
   if (!session) redirect('/login');
 
   let state: SubscriptionState;
   let error = false;
+  let nextClass: Awaited<ReturnType<typeof getNextClass>> = null;
 
   try {
     state = await getSubscriptionState(session.sub);
+    nextClass = await getNextClass(session.sub);
   } catch {
     error = true;
     state = { type: 'none' };
@@ -108,6 +145,40 @@ export default async function ClientDashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="font-headline text-headline-lg-mobile text-on-surface py-6">Mi Suscripción</h1>
+
+      {/* Próxima clase */}
+      {nextClass && (
+        <Card className="border-primary/30 bg-primary/5">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[20px]">event</span>
+              <h2 className="font-body text-sm font-semibold text-primary uppercase tracking-wide">
+                Tu próxima clase
+              </h2>
+            </div>
+            <p className="font-body text-xl font-bold text-on-surface">
+              {classTypeLabels[nextClass.classType ?? ''] ?? nextClass.classType ?? 'Clase'}
+            </p>
+            <p className="font-body text-base text-on-surface capitalize">
+              {nextClass.classDate
+                ? new Date(nextClass.classDate).toLocaleDateString('es-MX', {
+                    timeZone: BUSINESS_TIMEZONE,
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : 'Sin fecha'}
+            </p>
+            {nextClass.coachName && (
+              <p className="font-body text-sm text-on-surface-variant">
+                Coach: {nextClass.coachName}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {state.type === 'active' && (
         <Card>

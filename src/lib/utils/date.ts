@@ -2,7 +2,13 @@
 export const TIMEZONE = 'America/Mexico_City';
 
 /**
+ * Timezone del negocio. Todas las fechas se interpretan y muestran en este timezone.
+ */
+export const BUSINESS_TIMEZONE = 'America/Mexico_City';
+
+/**
  * Formatea una fecha de forma amigable para el usuario.
+ * Siempre muestra en horario America/Mexico_City.
  * Ejemplo: "Lunes 28 de julio, 2025 — 09:00"
  */
 export function formatFriendlyDate(date: Date | string | null): string {
@@ -11,6 +17,7 @@ export function formatFriendlyDate(date: Date | string | null): string {
   if (isNaN(d.getTime())) return 'Fecha inválida';
 
   const formatted = d.toLocaleDateString('es-MX', {
+    timeZone: BUSINESS_TIMEZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -19,6 +26,7 @@ export function formatFriendlyDate(date: Date | string | null): string {
   });
 
   const time = d.toLocaleTimeString('es-MX', {
+    timeZone: BUSINESS_TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -31,6 +39,7 @@ export function formatFriendlyDate(date: Date | string | null): string {
 
 /**
  * Formatea una fecha corta: "28/07/2025"
+ * Siempre muestra en horario America/Mexico_City.
  */
 export function formatShortDate(date: Date | string | null): string {
   if (!date) return '--/--/----';
@@ -52,6 +61,7 @@ export function formatShortDate(date: Date | string | null): string {
 
 /**
  * Formatea fecha con hora corta: "28/07/2025 — 09:00"
+ * Siempre muestra en horario America/Mexico_City.
  */
 export function formatShortDateTime(date: Date | string | null): string {
   if (!date) return '--/--/---- — --:--';
@@ -78,8 +88,12 @@ export function formatShortDateTime(date: Date | string | null): string {
 
 /**
  * Formatea una fecha relativa: "Mañana", "En 3 días", "Hace 2 días"
+ * Usa comparación de días de calendario en America/Mexico_City.
  */
-export function formatRelativeDate(date: Date | string | null): string {
+export function formatRelativeDate(
+  date: Date | string | null,
+  now: Date = new Date()
+): string {
   if (!date) return '';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';

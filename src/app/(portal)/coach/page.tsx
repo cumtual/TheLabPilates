@@ -2,10 +2,14 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { getCoachClasses } from '@/lib/queries/coach';
 import { ClassCalendar } from '@/components/coach/ClassCalendar';
+import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
 
 export default async function CoachDashboard() {
   const session = await getSession();
   if (!session) redirect('/login');
+
+  // Auto-complete past scheduled classes (lazy evaluation - secondary mechanism)
+  await autoCompletePassedClasses();
 
   const classes = await getCoachClasses(session.sub);
 

@@ -5,10 +5,14 @@ import { openClasses } from '@/db/schema';
 import { eq, and, gte, desc } from 'drizzle-orm';
 import { ClassCalendar } from '@/components/coach/ClassCalendar';
 import Link from 'next/link';
+import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
 
 export default async function CoachClassesPage() {
   const session = await getSession();
   if (!session) redirect('/login');
+
+  // Auto-complete past scheduled classes (lazy evaluation - secondary mechanism)
+  await autoCompletePassedClasses();
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
