@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { ClientDashboardError } from '@/components/client/ClientDashboardError';
-import { BUSINESS_TIMEZONE } from '@/lib/utils/date';
+import { TIMEZONE } from '@/lib/utils/date';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -162,7 +162,7 @@ export default async function ClientDashboardPage() {
             <p className="font-body text-base text-on-surface capitalize">
               {nextClass.classDate
                 ? new Date(nextClass.classDate).toLocaleDateString('es-MX', {
-                    timeZone: BUSINESS_TIMEZONE,
+                    timeZone: TIMEZONE,
                     weekday: 'long',
                     day: 'numeric',
                     month: 'long',

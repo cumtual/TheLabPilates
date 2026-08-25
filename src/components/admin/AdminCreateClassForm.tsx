@@ -5,6 +5,7 @@ import { adminCreateClassAction } from '@/actions/admin';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
+import { TIMEZONE } from '@/lib/utils/date';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
 
@@ -34,7 +35,7 @@ function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   return d.toLocaleDateString('es-MX', {
-    timeZone: 'America/Mexico_City',
+    timeZone: TIMEZONE,
     weekday: 'long',
     day: 'numeric',
     month: 'long',
