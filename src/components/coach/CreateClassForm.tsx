@@ -7,18 +7,13 @@ import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 const classTypeOptions = [
   { value: 'yoga', label: 'Yoga' },
   { value: 'mat_pilates', label: 'Mat Pilates' },
   { value: 'barre', label: 'Barre' },
 ];
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';
@@ -157,7 +152,7 @@ export function CreateClassForm() {
               <div className="flex justify-between">
                 <span className="font-body text-sm text-on-surface-variant">Tipo:</span>
                 <span className="font-body text-sm font-semibold text-on-surface">
-                  {classTypeLabels[previewData.type] ?? previewData.type}
+                  {getClassDisplayName(previewData.type, null)}
                 </span>
               </div>
               <div className="flex justify-between">

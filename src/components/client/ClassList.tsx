@@ -2,11 +2,13 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { EnrollWithGuestSection } from './EnrollWithGuestSection';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 export interface ClassItem {
   id: string;
   classDate: Date | string;
   classType: string | null;
+  customName?: string | null;
   capacity: number | null;
   enrolledCount: number;
   coachName: string | null;
@@ -15,12 +17,6 @@ export interface ClassItem {
 export interface ClassListProps {
   classes: ClassItem[];
 }
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 export function ClassList({ classes }: ClassListProps) {
   if (classes.length === 0) {
@@ -45,9 +41,7 @@ export function ClassList({ classes }: ClassListProps) {
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-1">
                   <h3 className="font-body text-base font-semibold text-on-surface">
-                    {classItem.classType
-                      ? classTypeLabels[classItem.classType] ?? classItem.classType
-                      : 'Clase'}
+                    {getClassDisplayName(classItem.classType, classItem.customName)}
                   </h3>
                   <p className="font-body text-sm text-outline capitalize">
                     {formatFriendlyDate(classItem.classDate)}
