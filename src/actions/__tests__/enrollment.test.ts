@@ -33,11 +33,16 @@ vi.mock('next/headers', () => ({
   }),
 }));
 
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
+
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((...args: unknown[]) => ({ type: 'eq', args })),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
+  notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
 }));
 
 import { enrollInClassAction } from '../enrollment';
@@ -59,11 +64,12 @@ function pastDate(daysAgo = 7): Date {
 }
 
 /**
- * Helper to set up the db.select mock that handles both:
+ * Helper to set up the db.select mock that handles:
  * 1. Subscription query: db.select({...}).from(...).leftJoin(...).where(...)
  * 2. Count query: db.select({...}).from(...).where(...)
+ * 3. Duplicate check query: db.select({...}).from(...).innerJoin(...).where(...)
  */
-function setupSelectMock(subscriptionResult: unknown[], countResult: { count: number }) {
+function setupSelectMock(subscriptionResult: unknown[], countResult: { count: number }, duplicateResult: unknown[] = []) {
   let callIndex = 0;
   (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
     callIndex++;
@@ -76,11 +82,20 @@ function setupSelectMock(subscriptionResult: unknown[], countResult: { count: nu
           }),
         }),
       };
-    } else {
+    } else if (callIndex === 2) {
       // Count query chain: .from().where()
       return {
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([countResult]),
+        }),
+      };
+    } else {
+      // Duplicate check query chain: .from().innerJoin().where()
+      return {
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(duplicateResult),
+          }),
         }),
       };
     }
@@ -265,7 +280,7 @@ describe('Property 15: Duplicate Enrollment Prevention', () => {
             createdAt: new Date(),
           };
 
-          setupSelectMock([{ userSub, payment }], { count: 3 });
+          setupSelectMock([{ userSub, payment }], { count: 3 }, [{ id: existingEnrollmentId }]);
 
           // Mock class query - valid scheduled future class
           (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -279,15 +294,6 @@ describe('Property 15: Duplicate Enrollment Prevention', () => {
             createdAt: new Date(),
           });
 
-          // Mock duplicate check - EXISTING enrollment found
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            id: existingEnrollmentId,
-            openClassId: classId,
-            userSubscriptionId: userSub.id,
-            status: 'pending',
-            createdAt: new Date(),
-          });
-
           // Transaction should NOT be called
           (db.transaction as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
@@ -295,7 +301,7 @@ describe('Property 15: Duplicate Enrollment Prevention', () => {
 
           // Must be blocked
           expect(result.success).toBe(false);
-          expect((result as { success: false; error: string }).error).toContain('reservación');
+          expect((result as { success: false; error: string }).error).toContain('inscrito');
 
           // No transaction should have been started
           expect(db.transaction).not.toHaveBeenCalled();
@@ -439,7 +445,7 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
             createdAt: new Date(),
           };
 
-          setupSelectMock([{ userSub, payment }], { count: 3 });
+          setupSelectMock([{ userSub, payment }], { count: 3 }, []);
 
           // Mock class query - valid scheduled future class
           (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -452,9 +458,6 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
             status: 'scheduled',
             createdAt: new Date(),
           });
-
-          // Mock duplicate check - no existing enrollment
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
           // Track transaction callback execution
           let txInsertCalled = false;
