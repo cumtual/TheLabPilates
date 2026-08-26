@@ -18,6 +18,7 @@ import type { ActionResult } from '@/lib/types';
 import { ALL_ROLES } from '@/lib/types/roles';
 import type { UserRole } from '@/lib/types/roles';
 import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 export async function cancelClassAction(classId: string): Promise<ActionResult> {
   const session = await getSession();
@@ -113,15 +114,9 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
     }
 
     // Send emails non-blocking (don't await — fire and forget)
-    const classTypeLabels: Record<string, string> = {
-      yoga: 'Yoga',
-      mat_pilates: 'Mat Pilates',
-      barre: 'Barre',
-    };
-
     if (recipients.length > 0) {
       sendClassCancellationEmail(recipients, {
-        type: classTypeLabels[openClass.classType ?? ''] ?? openClass.classType ?? 'Clase',
+        type: getClassDisplayName(openClass.classType ?? null, openClass.customName ?? null),
         date: openClass.classDate ?? new Date(),
         coachName,
       }).catch(() => {
@@ -469,8 +464,24 @@ export async function adminCreateClassAction(
   }
 
   // Validate class type
-  if (!classType || !['yoga', 'mat_pilates', 'barre'].includes(classType)) {
+  const validClassTypes = ['yoga', 'mat_pilates', 'barre', 'personalizada'];
+  if (!classType || !validClassTypes.includes(classType)) {
     return { success: false, error: 'Tipo de clase no válido.', field: 'classType' };
+  }
+
+  // Validate custom name for 'personalizada' type
+  const customName = formData.get('customName') as string | null;
+  let storedCustomName: string | null = null;
+
+  if (classType === 'personalizada') {
+    const trimmedName = customName?.trim() ?? '';
+    if (trimmedName.length === 0) {
+      return { success: false, error: 'El nombre de la clase personalizada es obligatorio.', field: 'customName' };
+    }
+    if (trimmedName.length > 100) {
+      return { success: false, error: 'El nombre no puede exceder 100 caracteres.', field: 'customName' };
+    }
+    storedCustomName = trimmedName;
   }
 
   // Validate coach exists and has coach/admin role
@@ -491,7 +502,8 @@ export async function adminCreateClassAction(
       classDate: date,
       coachUserId: coachId,
       capacity,
-      classType: classType as 'yoga' | 'mat_pilates' | 'barre',
+      classType: classType as 'yoga' | 'mat_pilates' | 'barre' | 'personalizada',
+      customName: storedCustomName,
       status: 'scheduled',
       available: 'available',
     });
@@ -584,6 +596,7 @@ export async function getSubscriptionEnrollmentsAction(
       classId: classEnrollments.openClassId,
       classDate: openClasses.classDate,
       classType: openClasses.classType,
+      customName: openClasses.customName,
       classStatus: openClasses.status,
       enrollmentStatus: classEnrollments.status,
       coachName: users.username,
@@ -614,12 +627,6 @@ export async function getSubscriptionEnrollmentsAction(
     }
   }
 
-  const classTypeLabels: Record<string, string> = {
-    yoga: 'Yoga',
-    mat_pilates: 'Mat Pilates',
-    barre: 'Barre',
-  };
-
   const enrollmentStatusLabels: Record<string, string> = {
     pending: 'Pendiente',
     attended: 'Asistió',
@@ -645,7 +652,7 @@ export async function getSubscriptionEnrollmentsAction(
           minute: '2-digit',
         })
       : 'Sin fecha',
-    classType: classTypeLabels[row.classType ?? ''] ?? row.classType ?? 'Clase',
+    classType: getClassDisplayName(row.classType ?? null, row.customName ?? null),
     classStatus: classStatusLabels[row.classStatus ?? ''] ?? row.classStatus ?? '',
     enrollmentStatus: enrollmentStatusLabels[row.enrollmentStatus ?? ''] ?? row.enrollmentStatus ?? '',
     coachName: row.coachName ?? 'Sin coach',

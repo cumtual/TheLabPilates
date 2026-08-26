@@ -63,6 +63,7 @@ async function getClientData(userId: string) {
     .select({
       id: classEnrollments.id,
       classType: openClasses.classType,
+      customName: openClasses.customName,
       classDate: openClasses.classDate,
       status: classEnrollments.status,
     })
@@ -116,6 +117,7 @@ async function getClientData(userId: string) {
     attendance: enrollmentRecords.map((record) => ({
       id: record.id,
       classType: record.classType,
+      customName: record.customName ?? null,
       classDate: record.classDate
         ? formatDate(new Date(record.classDate))
         : '--/--/----',

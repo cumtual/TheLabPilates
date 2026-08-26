@@ -2,6 +2,7 @@ import { db } from '@/db';
 import { openClasses, users } from '@/db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { ScheduleClient } from './ScheduleClient';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 function getWeekRange() {
   const now = new Date();
@@ -39,6 +40,7 @@ export default async function Schedule() {
       id: openClasses.id,
       classDate: openClasses.classDate,
       classType: openClasses.classType,
+      customName: openClasses.customName,
       coachName: users.username,
     })
     .from(openClasses)
@@ -52,12 +54,6 @@ export default async function Schedule() {
     )
     .orderBy(openClasses.classDate);
 
-  const classTypeLabels: Record<string, string> = {
-    yoga: 'Hatha Yoga',
-    mat_pilates: 'Mat Pilates',
-    barre: 'Barre',
-  };
-
   const formattedClasses: WeekClass[] = weekClasses.map((cls) => {
     const date = cls.classDate ? new Date(cls.classDate) : new Date();
     const dayOfWeek = date.getDay();
@@ -70,7 +66,7 @@ export default async function Schedule() {
     return {
       id: cls.id,
       time: `${hours}:${minutes} - ${endHour}:${minutes}`,
-      classType: classTypeLabels[cls.classType ?? ''] ?? cls.classType ?? 'Clase',
+      classType: getClassDisplayName(cls.classType ?? null, cls.customName ?? null),
       coachName: cls.coachName ?? 'Instructor',
       dayIndex,
     };

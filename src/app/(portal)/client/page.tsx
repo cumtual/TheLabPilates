@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { ClientDashboardError } from '@/components/client/ClientDashboardError';
 import { TIMEZONE } from '@/lib/utils/date';
 import { getGuestCreditsForCycle } from '@/lib/guest/credits';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -105,12 +106,6 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
   return { type: 'none' };
 }
 
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
-
 async function getNextClass(userId: string) {
   const now = new Date();
 
@@ -118,6 +113,7 @@ async function getNextClass(userId: string) {
     .select({
       classDate: openClasses.classDate,
       classType: openClasses.classType,
+      customName: openClasses.customName,
       coachName: users.username,
     })
     .from(classEnrollments)
@@ -174,7 +170,7 @@ export default async function ClientDashboardPage() {
               </h2>
             </div>
             <p className="font-body text-xl font-bold text-on-surface">
-              {classTypeLabels[nextClass.classType ?? ''] ?? nextClass.classType ?? 'Clase'}
+              {getClassDisplayName(nextClass.classType, nextClass.customName)}
             </p>
             <p className="font-body text-base text-on-surface capitalize">
               {nextClass.classDate

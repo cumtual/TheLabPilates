@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { cancelClassAction } from '@/actions/admin';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Pagination } from '@/components/ui/Pagination';
 
@@ -21,6 +22,7 @@ interface ClassItem {
   id: string;
   classDate: string | null;
   classType: string | null;
+  customName: string | null;
   status: string | null;
   capacity: number | null;
   coachName: string;
@@ -33,12 +35,6 @@ interface ClassManagementProps {
 }
 
 type StatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 const statusLabels: Record<string, string> = {
   scheduled: 'Programada',
@@ -182,7 +178,7 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-body font-semibold text-on-surface">
-                          {classTypeLabels[classItem.classType ?? ''] ?? classItem.classType ?? 'Clase'}
+                          {getClassDisplayName(classItem.classType, classItem.customName)}
                         </h3>
                         <Badge variant={statusVariants[classItem.status ?? ''] ?? 'pending'}>
                           {statusLabels[classItem.status ?? ''] ?? classItem.status}

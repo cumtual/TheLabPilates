@@ -6,6 +6,7 @@ import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
 import { Pagination } from '@/components/ui/Pagination';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 const CLIENT_PAGE_SIZE = 10;
 
@@ -16,6 +17,7 @@ interface OpenClass {
   capacity: number | null;
   available: string | null;
   classType: string | null;
+  customName?: string | null;
   status: string | null;
   createdAt: Date | string | null;
 }
@@ -25,12 +27,6 @@ interface ClassCalendarProps {
 }
 
 type StatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 const statusLabels: Record<string, string> = {
   scheduled: 'Programada',
@@ -138,7 +134,7 @@ export function ClassCalendar({ classes }: ClassCalendarProps) {
             const isPast = isClassPast(cls.classDate);
             const statusVariant = statusVariants[cls.status ?? 'scheduled'] ?? 'pending';
             const statusLabel = statusLabels[cls.status ?? 'scheduled'] ?? cls.status;
-            const typeLabel = classTypeLabels[cls.classType ?? ''] ?? cls.classType ?? 'Clase';
+            const typeLabel = getClassDisplayName(cls.classType, cls.customName);
             const relative = formatRelativeDate(cls.classDate);
 
             return (

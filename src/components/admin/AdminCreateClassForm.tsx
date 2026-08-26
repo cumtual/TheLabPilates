@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { TIMEZONE } from '@/lib/utils/date';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
 
@@ -13,13 +14,8 @@ const classTypeOptions = [
   { value: 'yoga', label: 'Yoga' },
   { value: 'mat_pilates', label: 'Mat Pilates' },
   { value: 'barre', label: 'Barre' },
+  { value: 'personalizada', label: 'Personalizada' },
 ];
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 interface Coach {
   id: string;
@@ -49,11 +45,14 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
   const [state, setState] = useState<ActionResult | null>(null);
   const [isPending, startTransition] = useTransition();
   const [showConfirm, setShowConfirm] = useState(false);
+  const [selectedType, setSelectedType] = useState('');
+  const [customName, setCustomName] = useState('');
   const [previewData, setPreviewData] = useState<{
     date: string;
     capacity: string;
     type: string;
     coachName: string;
+    customName: string | null;
   } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -69,9 +68,15 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
     const capacity = formData.get('capacity') as string;
     const classType = formData.get('classType') as string;
     const coachId = formData.get('coachId') as string;
+    const customNameValue = formData.get('customName') as string;
 
     if (!date || !capacity || !classType || !coachId) {
       setState({ success: false, error: 'Todos los campos son obligatorios.' });
+      return;
+    }
+
+    if (classType === 'personalizada' && !customNameValue?.trim()) {
+      setState({ success: false, error: 'El nombre de la clase personalizada es obligatorio', field: 'customName' });
       return;
     }
 
@@ -81,6 +86,7 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
       capacity,
       type: classType,
       coachName: coach?.username ?? 'Desconocido',
+      customName: classType === 'personalizada' ? customNameValue : null,
     });
     setShowConfirm(true);
   }
@@ -96,6 +102,8 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
         setState(result);
         if (result.success) {
           formRef.current?.reset();
+          setSelectedType('');
+          setCustomName('');
         }
       } catch {
         setState({ success: false, error: 'Error al crear la clase. Intenta de nuevo.' });
@@ -156,8 +164,31 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
           options={classTypeOptions}
           placeholder="Selecciona un tipo"
           required
+          value={selectedType}
+          onChange={(e) => {
+            const newType = e.target.value;
+            setSelectedType(newType);
+            if (newType !== 'personalizada') {
+              setCustomName('');
+            }
+          }}
           error={state && !state.success && state.field === 'classType' ? state.error : undefined}
         />
+
+        {selectedType === 'personalizada' && (
+          <Input
+            id="customName"
+            name="customName"
+            type="text"
+            label="Nombre de la clase"
+            placeholder="Ej: Clase inauguración"
+            maxLength={100}
+            required
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            error={state && !state.success && state.field === 'customName' ? state.error : undefined}
+          />
+        )}
 
         <button
           type="submit"
@@ -195,7 +226,7 @@ export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {
               <div className="flex justify-between">
                 <span className="font-body text-sm text-on-surface-variant">Tipo:</span>
                 <span className="font-body text-sm font-semibold text-on-surface">
-                  {classTypeLabels[previewData.type] ?? previewData.type}
+                  {getClassDisplayName(previewData.type, previewData.customName)}
                 </span>
               </div>
               <div className="flex justify-between">
