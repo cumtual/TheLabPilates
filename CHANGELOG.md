@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/cumtual/TheLabPilates/compare/v1.3.0...v1.4.0) (2026-08-26)
+
+
+### Features
+
+* **subscriptions:** add subscription status management and expiratio… ([c81662f](https://github.com/cumtual/TheLabPilates/commit/c81662f30e0599ea46ec84926592e662468f2cfb))
+* **subscriptions:** add subscription status management and expiration tracking ([6714638](https://github.com/cumtual/TheLabPilates/commit/67146382ccec544fa691a33a7911e83fe71fd53b))
+
 ## [1.3.0](https://github.com/cumtual/TheLabPilates/compare/v1.2.0...v1.3.0) (2026-08-05)
 
 
