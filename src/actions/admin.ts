@@ -1,6 +1,6 @@
 'use server';
 
-import { eq, and, gt, sql } from 'drizzle-orm';
+import { eq, and, gt, sql, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import {
@@ -186,7 +186,7 @@ export async function confirmPaymentAction(
     // 9.5: Set active=true on user_subscription
     await tx
       .update(userSubscriptions)
-      .set({ active: true })
+      .set({ active: true, status: 'active' })
       .where(eq(userSubscriptions.paymentId, paymentId));
 
     // 9.6: Accumulate days_remaining += sessions (not reset)
@@ -284,10 +284,10 @@ export async function suspendSubscriptionAction(
 
   // Atomic transaction: suspend + cancel enrollments + refund credits (Req 11.3)
   await db.transaction(async (tx) => {
-    // Set active=false
+    // Set active=false, status='suspended'
     await tx
       .update(userSubscriptions)
-      .set({ active: false })
+      .set({ active: false, status: 'suspended' })
       .where(eq(userSubscriptions.id, subscriptionId));
 
     // Cancel future enrollments + refund each credit
@@ -393,6 +393,7 @@ export async function reactivateSubscriptionAction(
     .update(userSubscriptions)
     .set({
       active: true,
+      status: 'active',
       expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     })
     .where(eq(userSubscriptions.id, subscriptionId));
@@ -555,4 +556,72 @@ export async function rejectPaymentAction(paymentId: string): Promise<ActionResu
 
   revalidatePath('/admin/payments');
   return { success: true, message: 'Pago rechazado y eliminado. El cliente ha sido notificado.' };
+}
+
+
+export async function getSubscriptionEnrollmentsAction(
+  subscriptionId: string
+): Promise<ActionResult & { enrollments?: Array<{ enrollmentId: string; classDate: string; classType: string; classStatus: string; enrollmentStatus: string; coachName: string }> }> {
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  if (!subscriptionId) {
+    return { success: false, error: 'ID de suscripción no proporcionado.' };
+  }
+
+  const results = await db
+    .select({
+      enrollmentId: classEnrollments.id,
+      classDate: openClasses.classDate,
+      classType: openClasses.classType,
+      classStatus: openClasses.status,
+      enrollmentStatus: classEnrollments.status,
+      coachName: users.username,
+    })
+    .from(classEnrollments)
+    .innerJoin(openClasses, eq(classEnrollments.openClassId, openClasses.id))
+    .leftJoin(users, eq(openClasses.coachUserId, users.id))
+    .where(eq(classEnrollments.userSubscriptionId, subscriptionId))
+    .orderBy(desc(openClasses.classDate));
+
+  const classTypeLabels: Record<string, string> = {
+    yoga: 'Yoga',
+    mat_pilates: 'Mat Pilates',
+    barre: 'Barre',
+  };
+
+  const enrollmentStatusLabels: Record<string, string> = {
+    pending: 'Pendiente',
+    attended: 'Asistió',
+    absent: 'Ausente',
+    late_cancelled: 'Cancelación tardía',
+    cancelled: 'Cancelada',
+  };
+
+  const classStatusLabels: Record<string, string> = {
+    scheduled: 'Programada',
+    cancelled: 'Cancelada',
+    completed: 'Completada',
+  };
+
+  const enrollments = results.map((row) => ({
+    enrollmentId: row.enrollmentId,
+    classDate: row.classDate
+      ? new Date(row.classDate).toLocaleDateString('es-MX', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : 'Sin fecha',
+    classType: classTypeLabels[row.classType ?? ''] ?? row.classType ?? 'Clase',
+    classStatus: classStatusLabels[row.classStatus ?? ''] ?? row.classStatus ?? '',
+    enrollmentStatus: enrollmentStatusLabels[row.enrollmentStatus ?? ''] ?? row.enrollmentStatus ?? '',
+    coachName: row.coachName ?? 'Sin coach',
+  }));
+
+  return { success: true, enrollments };
 }

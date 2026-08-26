@@ -6,6 +6,7 @@ import { openClasses, classEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
 import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
+import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-expiration';
 
 interface AttendanceRecord {
   enrollmentId: string;
@@ -106,6 +107,9 @@ export async function completeClassAction(
     .update(openClasses)
     .set({ status: 'completed' })
     .where(eq(openClasses.id, classId));
+
+  // Check and expire subscriptions linked to this completed class
+  await checkAndExpireSubscriptions(classId);
 
   return { success: true, message: 'Clase completada exitosamente.' };
 }
