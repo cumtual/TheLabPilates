@@ -10,6 +10,8 @@ import { Pagination } from '@/components/ui/Pagination';
 const CLIENT_PAGE_SIZE = 10;
 
 interface EnrolledStudent {
+  isGuest?: boolean;
+  origin?: string;
   name: string;
   email: string;
   status: string | null;
@@ -246,7 +248,7 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
                       {classItem.enrolledStudents.map((student, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between gap-2 py-2 border-b border-outline-variant/20 last:border-b-0"
+                          className={`flex items-center justify-between gap-2 py-2 border-b border-outline-variant/20 last:border-b-0 ${student.isGuest ? "pl-3 border-l-2 border-l-primary/40" : ""}`}
                         >
                           <div className="min-w-0">
                             <p className="font-body text-sm font-medium text-on-surface truncate">

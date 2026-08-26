@@ -1,6 +1,6 @@
 import { desc, eq, notInArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { openClasses, classEnrollments, users, userSubscriptions } from '@/db/schema';
+import { openClasses, classEnrollments, users, userSubscriptions, guestEnrollments } from '@/db/schema';
 import ClassManagement from '@/components/admin/ClassManagement';
 import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
 
@@ -36,8 +36,22 @@ export default async function AdminClassesPage() {
     .innerJoin(users, eq(userSubscriptions.userId, users.id))
     .where(notInArray(classEnrollments.status, ['cancelled', 'late_cancelled']));
 
+  // Fetch all active guest enrollments with registeredBy user info
+  const allGuestEnrollments = await db
+    .select({
+      classId: guestEnrollments.openClassId,
+      guestName: guestEnrollments.guestName,
+      status: guestEnrollments.status,
+      origin: guestEnrollments.origin,
+      registeredByName: users.username,
+      registeredByEmail: users.email,
+    })
+    .from(guestEnrollments)
+    .leftJoin(users, eq(guestEnrollments.registeredById, users.id))
+    .where(notInArray(guestEnrollments.status, ['cancelled', 'late_cancelled']));
+
   // Group enrollments by class
-  const enrollmentsByClass = new Map<string, { name: string; email: string; status: string | null }[]>();
+  const enrollmentsByClass = new Map<string, { name: string; email: string; status: string | null; isGuest?: boolean; origin?: string }[]>();
   for (const e of allEnrollments) {
     if (!enrollmentsByClass.has(e.classId)) {
       enrollmentsByClass.set(e.classId, []);
@@ -46,6 +60,21 @@ export default async function AdminClassesPage() {
       name: e.studentName,
       email: e.studentEmail,
       status: e.status,
+    });
+  }
+
+  // Add guest enrollments to the same map
+  for (const g of allGuestEnrollments) {
+    if (!enrollmentsByClass.has(g.classId)) {
+      enrollmentsByClass.set(g.classId, []);
+    }
+    const registeredBy = g.registeredByName || g.registeredByEmail || 'Desconocido';
+    enrollmentsByClass.get(g.classId)!.push({
+      name: `${g.guestName} (Invitado)`,
+      email: g.origin === 'admin' ? `Registrado por: Admin` : `Invitado de: ${registeredBy}`,
+      status: g.status,
+      isGuest: true,
+      origin: g.origin,
     });
   }
 

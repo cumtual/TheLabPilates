@@ -2,7 +2,7 @@
 
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { openClasses, classEnrollments } from '@/db/schema';
+import { openClasses, classEnrollments, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
 import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
@@ -52,12 +52,20 @@ export async function updateAttendanceAction(
     return { success: false, error: 'No puedes registrar asistencia de una clase futura.' };
   }
 
-  // Update each enrollment status
+  // Update each enrollment status in both tables
+  // Guest enrollment IDs are in guestEnrollments table, not classEnrollments
   for (const record of records) {
+    // Update classEnrollments (for regular enrollments)
     await db
       .update(classEnrollments)
       .set({ status: record.status })
       .where(eq(classEnrollments.id, record.enrollmentId));
+
+    // Also update guestEnrollments (for guest enrollments)
+    await db
+      .update(guestEnrollments)
+      .set({ status: record.status })
+      .where(eq(guestEnrollments.id, record.enrollmentId));
   }
 
   return { success: true, message: 'Asistencia registrada exitosamente.' };

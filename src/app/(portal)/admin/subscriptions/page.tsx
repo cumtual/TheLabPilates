@@ -73,6 +73,7 @@ export default async function AdminSubscriptionsPage({
       clientName: users.username,
       clientEmail: users.email,
       subscriptionName: subscriptions.name,
+      isOpenLab: subscriptions.guest,
     })
     .from(userSubscriptions)
     .innerJoin(users, eq(userSubscriptions.userId, users.id))
@@ -119,6 +120,7 @@ export default async function AdminSubscriptionsPage({
     expirationDate: row.expirationDate ? formatDate(new Date(row.expirationDate)) : null,
     active: row.active ?? false,
     status: row.status,
+    isOpenLab: row.isOpenLab ?? false,
   }));
 
   return (

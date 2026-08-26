@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
-import { getCoachClassById, getClassEnrollments, getCancelledEnrollments } from '@/lib/queries/coach';
+import { getCoachClassById, getClassEnrollments, getCancelledEnrollments, getClassGuestEnrollments } from '@/lib/queries/coach';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
+import { AdminGuestSection } from '@/components/admin/AdminGuestSection';
 import { Card } from '@/components/ui/Card';
 
 const classTypeLabels: Record<string, string> = {
@@ -43,6 +44,17 @@ export default async function AdminAttendancePage({
 
   const enrollments = await getClassEnrollments(classId);
   const cancelledEnrollments = await getCancelledEnrollments(classId);
+  const guestEnrollments = await getClassGuestEnrollments(classId);
+
+  // Map guest data to the shape expected by AdminGuestSection
+  const guestData = guestEnrollments.map((g) => ({
+    id: g.guestEnrollmentId,
+    guestName: g.guestName,
+    origin: g.origin as 'user' | 'admin',
+    status: g.status as 'pending' | 'attended' | 'absent' | 'late_cancelled' | 'cancelled',
+    registeredById: g.registeredById,
+    registeredByName: g.registeredByName,
+  }));
 
   const typeLabel = classTypeLabels[openClass.classType ?? ''] ?? openClass.classType ?? 'Clase';
   const dateFormatted = openClass.classDate
@@ -115,6 +127,11 @@ export default async function AdminAttendancePage({
           isCompleted={openClass.status === 'completed'}
         />
       )}
+
+      {/* Sección de gestión de invitados */}
+      <div className="mt-8">
+        <AdminGuestSection classId={classId} guests={guestData} />
+      </div>
 
       {/* Sección de cancelaciones */}
       {cancelledEnrollments.length > 0 && (

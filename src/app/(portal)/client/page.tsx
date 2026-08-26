@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { ClientDashboardError } from '@/components/client/ClientDashboardError';
 import { TIMEZONE } from '@/lib/utils/date';
+import { getGuestCreditsForCycle } from '@/lib/guest/credits';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -18,6 +19,7 @@ function formatDate(date: Date): string {
 
 type SubscriptionState =
   | { type: 'active'; daysRemaining: number; expirationDate: string; paymentConfirmed: boolean }
+  | { type: 'open_lab'; expirationDate: string; paymentConfirmed: boolean; guestCreditsAvailable: number }
   | { type: 'credits_exhausted'; expirationDate: string }
   | { type: 'pending' }
   | { type: 'expired'; expirationDate: string }
@@ -42,7 +44,7 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
     return { type: 'none' };
   }
 
-  const { userSub, payment } = result[0];
+  const { userSub, payment, subscription } = result[0];
 
   // Pending payment (not confirmed)
   if (payment && !payment.confirmed) {
@@ -62,7 +64,22 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
     };
   }
 
-  // Active subscription with no credits left
+  const isOpenLab = subscription?.guest === true;
+
+  // Open Lab subscription (unlimited classes + guest credit)
+  if (userSub.active && isOpenLab) {
+    const guestCreditsAvailable = await getGuestCreditsForCycle(userId, userSub.id);
+    return {
+      type: 'open_lab',
+      expirationDate: userSub.expirationDate
+        ? formatDate(new Date(userSub.expirationDate))
+        : '--/--/----',
+      paymentConfirmed: payment?.confirmed ?? false,
+      guestCreditsAvailable,
+    };
+  }
+
+  // Active subscription with no credits left (only for non-Open Lab)
   if (userSub.active && (userSub.daysRemaining ?? 0) <= 0) {
     return {
       type: 'credits_exhausted',
@@ -72,7 +89,7 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
     };
   }
 
-  // Active subscription
+  // Active subscription (regular, non-Open Lab)
   if (userSub.active) {
     return {
       type: 'active',
@@ -176,6 +193,60 @@ export default async function ClientDashboardPage() {
                 Coach: {nextClass.coachName}
               </p>
             )}
+          </div>
+        </Card>
+      )}
+
+      {/* Open Lab subscription */}
+      {state.type === 'open_lab' && (
+        <Card>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-body text-lg font-semibold text-on-surface">
+                Open Lab
+              </h2>
+              <Badge variant="active">Activa</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-1">
+                <p className="font-body text-sm text-outline">Clases</p>
+                <p className="font-body text-3xl font-bold text-primary">
+                  Ilimitadas
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-body text-sm text-outline">Crédito de invitado</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-body text-3xl font-bold text-primary">
+                    {state.guestCreditsAvailable}
+                  </p>
+                  <span className="font-body text-sm text-on-surface-variant">
+                    {state.guestCreditsAvailable === 1 ? 'disponible' : 'usado'}
+                  </span>
+                </div>
+                <p className="font-body text-xs text-outline">
+                  {state.guestCreditsAvailable === 1
+                    ? 'Puedes invitar a 1 persona a una clase este ciclo'
+                    : 'Ya utilizaste tu invitado en este ciclo'}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-body text-sm text-outline">Fecha de expiración</p>
+                <p className="font-body text-base text-on-surface">
+                  {state.expirationDate}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="font-body text-sm text-outline">Estado del pago</p>
+                <Badge variant={state.paymentConfirmed ? 'confirmed' : 'pending'}>
+                  {state.paymentConfirmed ? 'Confirmado' : 'Pendiente'}
+                </Badge>
+              </div>
+            </div>
           </div>
         </Card>
       )}

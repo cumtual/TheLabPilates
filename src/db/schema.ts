@@ -157,3 +157,34 @@ export const debitCards = pgTable('debit_cards', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 });
+
+// Guest Management
+export const guestOriginEnum = pgEnum('guest_origin', ['user', 'admin']);
+
+export const guestEnrollments = pgTable('guest_enrollments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  openClassId: uuid('open_class_id')
+    .notNull()
+    .references(() => openClasses.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  guestName: varchar('guest_name', { length: 100 }).notNull(),
+  origin: guestOriginEnum('origin').notNull(),
+  registeredById: uuid('registered_by_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  status: enrollmentStatusEnum('status').default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const guestCredits = pgTable('guest_credits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  userSubscriptionId: uuid('user_subscription_id')
+    .notNull()
+    .references(() => userSubscriptions.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  creditsUsed: integer('credits_used').default(0).notNull(),
+  guestEnrollmentId: uuid('guest_enrollment_id')
+    .references(() => guestEnrollments.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});

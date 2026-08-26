@@ -1,17 +1,28 @@
 import { redirect } from 'next/navigation';
-import { desc } from 'drizzle-orm';
+import { desc, and, eq, notInArray } from 'drizzle-orm';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { classEnrollments, openClasses, userSubscriptions, users } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { classEnrollments, openClasses, userSubscriptions, users, guestEnrollments } from '@/db/schema';
 import { ClientReservationsView } from '@/components/client/ClientReservationsView';
+import { checkGuestEligibilityAction } from '@/actions/guest';
+import { getAvailableCapacity } from '@/lib/guest/capacity';
+
+export interface GuestInfo {
+  guestEnrollmentId: string;
+  guestName: string;
+}
 
 export interface ReservationHistoryItem {
   id: string;
+  classId: string;
   classDate: string;
   classType: string | null;
   coachName: string | null;
   enrollmentStatus: string | null;
+  /** Associated active guest enrollment, if any */
+  guest: GuestInfo | null;
+  /** Whether the class has available capacity (for AddGuestButton) */
+  hasCapacity: boolean;
 }
 
 export default async function ClientReservationsPage() {
@@ -20,12 +31,14 @@ export default async function ClientReservationsPage() {
 
   let reservations: ReservationHistoryItem[] = [];
   let error = false;
+  let guestEligible = false;
 
   try {
     // Fetch ALL reservations for this user (client handles filters + pagination)
     const results = await db
       .select({
         enrollmentId: classEnrollments.id,
+        classId: openClasses.id,
         classDate: openClasses.classDate,
         classType: openClasses.classType,
         coachName: users.username,
@@ -38,12 +51,64 @@ export default async function ClientReservationsPage() {
       .where(eq(userSubscriptions.userId, session.sub))
       .orderBy(desc(openClasses.classDate));
 
+    // Check guest eligibility for the user (once, applies to all reservations)
+    const eligibility = await checkGuestEligibilityAction();
+    guestEligible = eligibility.eligible && eligibility.creditsAvailable > 0;
+
+    // Fetch active guest enrollments for the user's classes
+    const userGuestEnrollments = await db
+      .select({
+        id: guestEnrollments.id,
+        openClassId: guestEnrollments.openClassId,
+        guestName: guestEnrollments.guestName,
+      })
+      .from(guestEnrollments)
+      .where(
+        and(
+          eq(guestEnrollments.registeredById, session.sub),
+          notInArray(guestEnrollments.status, ['cancelled', 'late_cancelled'])
+        )
+      );
+
+    // Create a map of classId -> guest info for quick lookup
+    const guestByClassId = new Map<string, GuestInfo>();
+    for (const g of userGuestEnrollments) {
+      guestByClassId.set(g.openClassId, {
+        guestEnrollmentId: g.id,
+        guestName: g.guestName,
+      });
+    }
+
+    // Get unique classIds for pending future reservations to check capacity
+    const pendingFutureClassIds = results
+      .filter(
+        (r) =>
+          r.enrollmentStatus === 'pending' &&
+          r.classDate &&
+          new Date(r.classDate) > new Date()
+      )
+      .map((r) => r.classId);
+
+    const uniqueClassIds = [...new Set(pendingFutureClassIds)];
+
+    // Fetch capacity for relevant classes (only pending future ones)
+    const capacityMap = new Map<string, boolean>();
+    await Promise.all(
+      uniqueClassIds.map(async (classId) => {
+        const available = await getAvailableCapacity(classId);
+        capacityMap.set(classId, available >= 1);
+      })
+    );
+
     reservations = results.map((r) => ({
       id: r.enrollmentId,
+      classId: r.classId,
       classDate: r.classDate?.toISOString() ?? new Date().toISOString(),
       classType: r.classType,
       coachName: r.coachName,
       enrollmentStatus: r.enrollmentStatus,
+      guest: guestByClassId.get(r.classId) ?? null,
+      hasCapacity: capacityMap.get(r.classId) ?? false,
     }));
   } catch {
     error = true;
@@ -66,7 +131,7 @@ export default async function ClientReservationsPage() {
           </a>
         </div>
       ) : (
-        <ClientReservationsView reservations={reservations} />
+        <ClientReservationsView reservations={reservations} guestEligible={guestEligible} />
       )}
     </div>
   );
