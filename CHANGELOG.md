@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/cumtual/TheLabPilates/compare/v1.5.0...v1.6.0) (2026-08-26)
+
+
+### Features
+
+* **classes:** add custom class type support with personalized naming ([c9c5d8b](https://github.com/cumtual/TheLabPilates/commit/c9c5d8b39b746dacd9177de97c02b709e631690c))
+
 ## [1.5.0](https://github.com/cumtual/TheLabPilates/compare/v1.4.0...v1.5.0) (2026-08-26)
 
 
