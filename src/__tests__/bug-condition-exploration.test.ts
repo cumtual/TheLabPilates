@@ -117,12 +117,18 @@ vi.mock('@/db', () => {
   const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
   const mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 
+  // Mock select for autoCompletePassedClasses (returns chainable .from().where())
+  const mockSelectWhere = vi.fn().mockResolvedValue([]);
+  const mockSelectFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
+  const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
+
   return {
     db: {
       query: {
         openClasses: { findFirst: vi.fn() },
       },
       update: mockUpdate,
+      select: mockSelect,
     },
   };
 });

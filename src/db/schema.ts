@@ -38,6 +38,12 @@ export const enrollmentStatusEnum = pgEnum('enrollment_status', [
   'late_cancelled',
   'cancelled',
 ]);
+export const subscriptionStatusEnum = pgEnum('subscription_status', [
+  'pending',
+  'active',
+  'suspended',
+  'expired',
+]);
 
 // Tables
 export const users = pgTable('users', {
@@ -96,6 +102,7 @@ export const userSubscriptions = pgTable('user_suscriptions', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
   active: boolean('active').default(false),
+  status: subscriptionStatusEnum('status').default('pending'),
   expirationDate: timestamp('expiration_date', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
