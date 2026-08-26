@@ -73,7 +73,7 @@ export function SubscriptionCard({ pkg, hasPendingPayment, activeCard }: Subscri
             Sesiones
           </span>
           <span className="font-body text-body-md font-semibold text-on-surface">
-            {pkg.sessions ?? 0}
+            {pkg.guest ? "Ilimitadas" : (pkg.sessions ?? 0)}
           </span>
         </div>
         <div className="flex items-center justify-between">
@@ -196,7 +196,7 @@ export function SubscriptionCard({ pkg, hasPendingPayment, activeCard }: Subscri
         <p>¿Deseas adquirir el paquete <strong>{pkg.name}</strong> con el método de pago <strong>{confirmMethod ? methodLabels[confirmMethod] : ''}</strong>?</p>
         <div className="bg-surface-container-low rounded-lg p-3 space-y-1">
           <p className="font-body text-sm text-on-surface-variant">
-            Sesiones: <span className="font-semibold text-on-surface">{pkg.sessions ?? 0}</span>
+            Sesiones: <span className="font-semibold text-on-surface">{pkg.guest ? "Ilimitadas" : (pkg.sessions ?? 0)}</span>
           </p>
           <p className="font-body text-sm text-on-surface-variant">
             Precio: <span className="font-semibold text-on-surface">${pkg.price ?? 0} MXN</span>

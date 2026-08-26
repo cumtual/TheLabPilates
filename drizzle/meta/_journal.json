@@ -15,6 +15,13 @@
       "when": 1787689700000,
       "tag": "0001_data_migration_subscription_status",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787728105125,
+      "tag": "0002_solid_virginia_dare",
+      "breakpoints": true
     }
   ]
 }

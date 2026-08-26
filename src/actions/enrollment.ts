@@ -1,10 +1,11 @@
 'use server';
 
-import { eq, and, sql, count, notInArray } from 'drizzle-orm';
+import { eq, and, sql, notInArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
-import { classEnrollments, openClasses, userSubscriptions, payments } from '@/db/schema';
+import { classEnrollments, openClasses, userSubscriptions, payments, subscriptions, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
+import { getAvailableCapacity } from '@/lib/guest/capacity';
 import type { ActionResult } from '@/lib/types';
 
 export async function enrollInClassAction(classId: string): Promise<ActionResult> {
@@ -25,9 +26,11 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
     .select({
       userSub: userSubscriptions,
       payment: payments,
+      subscription: subscriptions,
     })
     .from(userSubscriptions)
     .leftJoin(payments, eq(userSubscriptions.paymentId, payments.id))
+    .leftJoin(subscriptions, eq(userSubscriptions.subscriptionId, subscriptions.id))
     .where(
       and(
         eq(userSubscriptions.userId, session.sub),
@@ -35,12 +38,16 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       )
     );
 
-  // Find a usable subscription: confirmed payment, not expired, has credits
+  // Find a usable subscription: confirmed payment, not expired, has credits (or is Open Lab)
   const now = new Date();
   const activeSub = userSubs.find((row) => {
     if (!row.payment?.confirmed) return false;
     if (row.userSub.expirationDate && new Date(row.userSub.expirationDate) < now) return false;
-    if (!row.userSub.daysRemaining || row.userSub.daysRemaining <= 0) return false;
+    // Open Lab (guest = true) doesn't use days_remaining — unlimited classes
+    const isOpenLab = row.subscription?.guest === true;
+    if (!isOpenLab) {
+      if (!row.userSub.daysRemaining || row.userSub.daysRemaining <= 0) return false;
+    }
     return true;
   });
 
@@ -60,6 +67,7 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
   }
 
   const userSub = activeSub.userSub;
+  const isOpenLab = activeSub.subscription?.guest === true;
 
   // 2. Get the class and validate
   const openClass = await db.query.openClasses.findFirst({
@@ -78,18 +86,10 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
     return { success: false, error: 'Esta clase ya pasó.' };
   }
 
-  // 3. Check capacity (only count active enrollments, not cancelled ones)
-  const [enrollmentCount] = await db
-    .select({ count: count() })
-    .from(classEnrollments)
-    .where(
-      and(
-        eq(classEnrollments.openClassId, classId),
-        notInArray(classEnrollments.status, ['cancelled', 'late_cancelled'])
-      )
-    );
+  // 3. Check capacity (count active enrollments + guest enrollments)
+  const availableCapacity = await getAvailableCapacity(classId);
 
-  if (enrollmentCount.count >= (openClass.capacity ?? 0)) {
+  if (availableCapacity < 1) {
     return { success: false, error: 'Clase llena.' };
   }
 
@@ -110,7 +110,7 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
     return { success: false, error: 'Ya estás inscrito en esta clase.' };
   }
 
-  // 5. Atomic transaction: create enrollment + decrement days_remaining
+  // 5. Atomic transaction: create enrollment + decrement days_remaining (only for non-Open Lab)
   await db.transaction(async (tx) => {
     await tx.insert(classEnrollments).values({
       openClassId: classId,
@@ -118,11 +118,14 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       status: 'pending',
     });
 
-    await tx.execute(sql`
-      UPDATE user_suscriptions
-      SET days_remaining = days_remaining - 1
-      WHERE id = ${userSub.id} AND days_remaining > 0
-    `);
+    // Open Lab memberships don't use days_remaining — unlimited classes
+    if (!isOpenLab) {
+      await tx.execute(sql`
+        UPDATE user_suscriptions
+        SET days_remaining = days_remaining - 1
+        WHERE id = ${userSub.id} AND days_remaining > 0
+      `);
+    }
   });
 
   revalidatePath('/client');
@@ -160,6 +163,36 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
     return { success: false, error: 'Solo puedes cancelar reservaciones pendientes.' };
   }
 
+  // Determine if the subscription is Open Lab (guest = true)
+  const [subRow] = await db
+    .select({ guest: subscriptions.guest })
+    .from(userSubscriptions)
+    .leftJoin(subscriptions, eq(userSubscriptions.subscriptionId, subscriptions.id))
+    .where(eq(userSubscriptions.id, enrollment.userSubscriptionId));
+
+  const isOpenLab = subRow?.guest === true;
+
+  // Check if the reservation has an associated active guest in guest_enrollments
+  const activeGuest = await db
+    .select({ id: guestEnrollments.id })
+    .from(guestEnrollments)
+    .where(
+      and(
+        eq(guestEnrollments.openClassId, enrollment.openClassId),
+        eq(guestEnrollments.registeredById, session.sub),
+        notInArray(guestEnrollments.status, ['cancelled', 'late_cancelled'])
+      )
+    );
+
+  if (activeGuest.length > 0) {
+    // Signal to UI that this reservation has an associated guest — show cancel options dialog
+    return {
+      success: false,
+      error: 'HAS_GUEST',
+      field: activeGuest[0].id,
+    };
+  }
+
   // Get the class to check date
   const openClass = await db.query.openClasses.findFirst({
     where: eq(openClasses.id, enrollment.openClassId),
@@ -178,15 +211,19 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
   const hoursUntilClass = (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
 
   if (hoursUntilClass >= 24) {
-    // Timely cancellation: delete enrollment + refund credit (atomic)
+    // Timely cancellation: delete enrollment + conditionally refund credit (atomic)
     try {
       await db.transaction(async (tx) => {
         await tx.delete(classEnrollments).where(eq(classEnrollments.id, enrollmentId));
-        await tx.execute(sql`
-          UPDATE user_suscriptions
-          SET days_remaining = days_remaining + 1
-          WHERE id = ${enrollment.userSubscriptionId}
-        `);
+
+        // Open Lab memberships don't use days_remaining — skip increment
+        if (!isOpenLab) {
+          await tx.execute(sql`
+            UPDATE user_suscriptions
+            SET days_remaining = days_remaining + 1
+            WHERE id = ${enrollment.userSubscriptionId}
+          `);
+        }
       });
     } catch {
       return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
