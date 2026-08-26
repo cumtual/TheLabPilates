@@ -33,6 +33,7 @@ export default async function SubscriptionPage({
   let hasActiveSubscription = false;
   let activeCredits = 0;
   let activeExpiration: string | null = null;
+  let isOpenLab = false;
 
   const existingUserSubs = await db.query.userSubscriptions.findMany({
     where: eq(userSubscriptions.userId, session.sub),
@@ -52,12 +53,23 @@ export default async function SubscriptionPage({
       hasPendingPayment = true;
     }
 
-    // Check active subscription (only if it has credits remaining)
-    if (userSub.active && (userSub.daysRemaining ?? 0) > 0 && userSub.expirationDate && new Date(userSub.expirationDate) > new Date()) {
-      hasActiveSubscription = true;
-      activeCredits = userSub.daysRemaining ?? 0;
-      const exp = new Date(userSub.expirationDate);
-      activeExpiration = `${exp.getDate().toString().padStart(2, '0')}/${(exp.getMonth() + 1).toString().padStart(2, '0')}/${exp.getFullYear()}`;
+    // Check active subscription
+    if (userSub.active && userSub.expirationDate && new Date(userSub.expirationDate) > new Date()) {
+      // Get the subscription plan to check if it's Open Lab
+      const plan = await db.query.subscriptions.findFirst({
+        where: eq(subscriptions.id, userSub.subscriptionId),
+      });
+
+      const isOpenLabPlan = plan?.guest === true;
+
+      // Open Lab doesn't use daysRemaining — it's always "active" if not expired
+      if (isOpenLabPlan || (userSub.daysRemaining ?? 0) > 0) {
+        hasActiveSubscription = true;
+        isOpenLab = isOpenLabPlan;
+        activeCredits = isOpenLabPlan ? 0 : (userSub.daysRemaining ?? 0);
+        const exp = new Date(userSub.expirationDate);
+        activeExpiration = `${exp.getDate().toString().padStart(2, '0')}/${(exp.getMonth() + 1).toString().padStart(2, '0')}/${exp.getFullYear()}`;
+      }
     }
 
     // Check suspended subscription (confirmed payment but not active)
@@ -95,6 +107,7 @@ export default async function SubscriptionPage({
         <ActiveSubscriptionWarning
           credits={activeCredits}
           expiration={activeExpiration}
+          isOpenLab={isOpenLab}
         />
       )}
 

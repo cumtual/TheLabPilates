@@ -9,16 +9,28 @@ import { Pagination } from '@/components/ui/Pagination';
 
 const PAGE_SIZE = 10;
 
+export interface GuestInfo {
+  guestEnrollmentId: string;
+  guestName: string;
+}
+
 export interface ReservationHistoryItem {
   id: string;
+  classId: string;
   classDate: string;
   classType: string | null;
   coachName: string | null;
   enrollmentStatus: string | null;
+  /** Associated active guest enrollment, if any */
+  guest: GuestInfo | null;
+  /** Whether the class has available capacity */
+  hasCapacity: boolean;
 }
 
 interface ClientReservationsViewProps {
   reservations: ReservationHistoryItem[];
+  /** Whether the user is eligible to add guests (Open Lab + credits available) */
+  guestEligible: boolean;
 }
 
 type StatusFilter = 'all' | 'pending' | 'attended' | 'absent' | 'late_cancelled' | 'cancelled';
@@ -54,7 +66,7 @@ const statusVariants: Record<string, BadgeVariant> = {
   cancelled: 'cancelled',
 };
 
-export function ClientReservationsView({ reservations }: ClientReservationsViewProps) {
+export function ClientReservationsView({ reservations, guestEligible }: ClientReservationsViewProps) {
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
 
@@ -152,6 +164,9 @@ export function ClientReservationsView({ reservations }: ClientReservationsViewP
                     classType: reservation.classType,
                     coachName: reservation.coachName,
                   }}
+                  guest={reservation.guest}
+                  hasCapacity={reservation.hasCapacity}
+                  isEligible={guestEligible}
                 />
               );
             }

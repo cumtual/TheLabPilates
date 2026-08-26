@@ -7,6 +7,8 @@ import {
   payments,
   openClasses,
   classEnrollments,
+  guestEnrollments,
+  guestCredits,
 } from './schema';
 
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -68,6 +70,32 @@ export const classEnrollmentsRelations = relations(classEnrollments, ({ one }) =
   userSubscription: one(userSubscriptions, {
     fields: [classEnrollments.userSubscriptionId],
     references: [userSubscriptions.id],
+  }),
+}));
+
+export const guestEnrollmentsRelations = relations(guestEnrollments, ({ one }) => ({
+  openClass: one(openClasses, {
+    fields: [guestEnrollments.openClassId],
+    references: [openClasses.id],
+  }),
+  registeredBy: one(users, {
+    fields: [guestEnrollments.registeredById],
+    references: [users.id],
+  }),
+}));
+
+export const guestCreditsRelations = relations(guestCredits, ({ one }) => ({
+  user: one(users, {
+    fields: [guestCredits.userId],
+    references: [users.id],
+  }),
+  userSubscription: one(userSubscriptions, {
+    fields: [guestCredits.userSubscriptionId],
+    references: [userSubscriptions.id],
+  }),
+  guestEnrollment: one(guestEnrollments, {
+    fields: [guestCredits.guestEnrollmentId],
+    references: [guestEnrollments.id],
   }),
 }));
 

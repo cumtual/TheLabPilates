@@ -23,6 +23,7 @@ interface SubscriptionItem {
   expirationDate: string | null;
   active: boolean;
   status: 'pending' | 'active' | 'suspended' | 'expired' | null;
+  isOpenLab: boolean;
 }
 
 type StatusFilter = 'all' | 'active' | 'suspended' | 'expired';
@@ -70,7 +71,7 @@ export function SubscriptionManagement({
 
   // Enrollments detail view
   const [expandedSubscription, setExpandedSubscription] = useState<string | null>(null);
-  const [enrollmentsData, setEnrollmentsData] = useState<Record<string, Array<{ enrollmentId: string; classDate: string; classType: string; classStatus: string; enrollmentStatus: string; coachName: string }>>>({});
+  const [enrollmentsData, setEnrollmentsData] = useState<Record<string, Array<{ enrollmentId: string; classDate: string; classType: string; classStatus: string; enrollmentStatus: string; coachName: string; guestName?: string }>>>({});
   const [loadingEnrollments, setLoadingEnrollments] = useState<string | null>(null);
 
   // Track local status changes for optimistic UI
@@ -341,9 +342,16 @@ export function SubscriptionManagement({
                       {effectiveStatus === 'pending' && (
                         <Badge variant="pending">Pendiente</Badge>
                       )}
-                      <span className="font-body text-sm text-on-surface">
-                        Créditos: {sub.daysRemaining ?? 0}
-                      </span>
+                      {!sub.isOpenLab && (
+                        <span className="font-body text-sm text-on-surface">
+                          Créditos: {sub.daysRemaining ?? 0}
+                        </span>
+                      )}
+                      {sub.isOpenLab && (
+                        <span className="font-body text-sm text-primary font-medium">
+                          Ilimitadas
+                        </span>
+                      )}
                       {sub.expirationDate && (
                         <span className="font-body text-xs text-outline">
                           {effectiveStatus === 'expired' ? 'Vencida' : 'Vence'}: {sub.expirationDate}
@@ -430,6 +438,11 @@ export function SubscriptionManagement({
                                   <span className="font-body text-xs text-outline">
                                     Coach: {enrollment.coachName}
                                   </span>
+                                  {enrollment.guestName && (
+                                    <span className="font-body text-xs text-primary font-medium">
+                                      👤 Invitado: {enrollment.guestName}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex flex-col items-end gap-0.5">
                                   <span className="font-body text-xs text-on-surface-variant">

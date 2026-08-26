@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
@@ -8,9 +7,10 @@ import Link from 'next/link';
 interface ActiveSubscriptionWarningProps {
   credits: number;
   expiration: string | null;
+  isOpenLab?: boolean;
 }
 
-export function ActiveSubscriptionWarning({ credits, expiration }: ActiveSubscriptionWarningProps) {
+export function ActiveSubscriptionWarning({ credits, expiration, isOpenLab = false }: ActiveSubscriptionWarningProps) {
   return (
     <Card className="border-primary/30 bg-primary/5">
       <div className="space-y-4">
@@ -23,8 +23,12 @@ export function ActiveSubscriptionWarning({ credits, expiration }: ActiveSubscri
 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <span className="font-body text-sm text-on-surface-variant">Créditos disponibles:</span>
-            <Badge variant="active">{credits} sesiones</Badge>
+            <span className="font-body text-sm text-on-surface-variant">
+              {isOpenLab ? 'Clases:' : 'Créditos disponibles:'}
+            </span>
+            <Badge variant="active">
+              {isOpenLab ? 'Ilimitadas' : `${credits} sesiones`}
+            </Badge>
           </div>
           {expiration && (
             <div className="flex items-center gap-3">
@@ -35,7 +39,9 @@ export function ActiveSubscriptionWarning({ credits, expiration }: ActiveSubscri
         </div>
 
         <p className="font-body text-sm text-on-surface-variant">
-          Si compras un nuevo paquete, los créditos se acumularán a tu suscripción actual al ser confirmado el pago.
+          {isOpenLab
+            ? 'Ya tienes Open Lab activo con clases ilimitadas. Si compras otro paquete, se creará una nueva suscripción.'
+            : 'Si compras un nuevo paquete, los créditos se acumularán a tu suscripción actual al ser confirmado el pago.'}
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 pt-2">

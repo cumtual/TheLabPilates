@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
-import { getCoachClassById, getClassEnrollments, getCancelledEnrollments } from '@/lib/queries/coach';
+import { getCoachClassById, getClassEnrollments, getCancelledEnrollments, getClassGuestEnrollments, getCancelledGuestEnrollments } from '@/lib/queries/coach';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
 import { Card } from '@/components/ui/Card';
+import { GuestBadge } from '@/components/coach/GuestBadge';
+import { GuestTooltip } from '@/components/coach/GuestTooltip';
 
 const classTypeLabels: Record<string, string> = {
   yoga: 'Yoga',
@@ -49,6 +51,39 @@ export default async function AttendancePage({
 
   const enrollments = await getClassEnrollments(classId);
   const cancelledEnrollments = await getCancelledEnrollments(classId);
+  const guestEnrollments = await getClassGuestEnrollments(classId);
+  const cancelledGuestEnrollments = await getCancelledGuestEnrollments(classId);
+
+  // Build a combined list: each titular enrollment followed by their guest (if any)
+  type AttendanceEntry =
+    | { type: 'enrollment'; data: typeof enrollments[number] }
+    | { type: 'guest'; data: typeof guestEnrollments[number] };
+
+  const orderedEntries: AttendanceEntry[] = [];
+  const guestsByRegisteredBy = new Map<string, typeof guestEnrollments>();
+  for (const guest of guestEnrollments) {
+    const existing = guestsByRegisteredBy.get(guest.registeredById) ?? [];
+    existing.push(guest);
+    guestsByRegisteredBy.set(guest.registeredById, existing);
+  }
+
+  // Place each enrollment followed by their registered guests
+  const placedGuestIds = new Set<string>();
+  for (const enrollment of enrollments) {
+    orderedEntries.push({ type: 'enrollment', data: enrollment });
+    const guests = guestsByRegisteredBy.get(enrollment.userId) ?? [];
+    for (const guest of guests) {
+      orderedEntries.push({ type: 'guest', data: guest });
+      placedGuestIds.add(guest.guestEnrollmentId);
+    }
+  }
+
+  // Add any remaining guests not linked to an active enrollment (e.g., admin-added guests)
+  for (const guest of guestEnrollments) {
+    if (!placedGuestIds.has(guest.guestEnrollmentId)) {
+      orderedEntries.push({ type: 'guest', data: guest });
+    }
+  }
 
   const typeLabel = classTypeLabels[openClass.classType ?? ''] ?? openClass.classType ?? 'Clase';
   const dateFormatted = openClass.classDate
@@ -79,7 +114,7 @@ export default async function AttendancePage({
               Esta clase aún no ocurre. Puedes ver los alumnos inscritos, pero no registrar asistencia hasta que la fecha de clase haya pasado.
             </p>
           </Card>
-          {enrollments.length === 0 ? (
+          {orderedEntries.length === 0 ? (
             <Card>
               <p className="font-body text-on-surface-variant text-center py-8">
                 No hay alumnos inscritos en esta clase.
@@ -89,26 +124,52 @@ export default async function AttendancePage({
             <div className="space-y-2">
               <p className="font-body text-sm text-on-surface-variant mb-3">
                 {enrollments.length} alumno{enrollments.length !== 1 ? 's' : ''} inscrito{enrollments.length !== 1 ? 's' : ''}
+                {guestEnrollments.length > 0 && ` + ${guestEnrollments.length} invitado${guestEnrollments.length !== 1 ? 's' : ''}`}
               </p>
-              {enrollments.map((enrollment) => (
-                <Card key={enrollment.enrollmentId} className="flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-body text-sm font-semibold text-on-surface truncate">
-                      {enrollment.studentName}
-                    </p>
-                    <p className="font-body text-xs text-on-surface-variant truncate">
-                      {enrollment.studentEmail}
-                    </p>
-                  </div>
-                  <span className="font-body text-xs text-outline px-2 py-1 bg-surface-container-low rounded">
-                    Pendiente
-                  </span>
-                </Card>
-              ))}
+              {orderedEntries.map((entry) =>
+                entry.type === 'enrollment' ? (
+                  <Card key={entry.data.enrollmentId} className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-body text-sm font-semibold text-on-surface truncate">
+                        {entry.data.studentName}
+                      </p>
+                      <p className="font-body text-xs text-on-surface-variant truncate">
+                        {entry.data.studentEmail}
+                      </p>
+                    </div>
+                    <span className="font-body text-xs text-outline px-2 py-1 bg-surface-container-low rounded">
+                      Pendiente
+                    </span>
+                  </Card>
+                ) : (
+                  <Card key={entry.data.guestEnrollmentId} className="flex items-center gap-3 ml-4 border-l-2 border-primary/20">
+                    <div className="flex-1 min-w-0">
+                      <GuestTooltip
+                        origin={entry.data.origin}
+                        registeredByName={entry.data.registeredByName ?? undefined}
+                        registeredByEmail={entry.data.registeredByEmail ?? undefined}
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-body text-sm font-semibold text-on-surface truncate">
+                            {entry.data.guestName}
+                          </p>
+                          <GuestBadge
+                            guestName={entry.data.guestName}
+                            origin={entry.data.origin}
+                          />
+                        </div>
+                      </GuestTooltip>
+                    </div>
+                    <span className="font-body text-xs text-outline px-2 py-1 bg-surface-container-low rounded">
+                      Pendiente
+                    </span>
+                  </Card>
+                )
+              )}
             </div>
           )}
         </>
-      ) : enrollments.length === 0 ? (
+      ) : orderedEntries.length === 0 ? (
         <Card>
           <p className="font-body text-on-surface-variant text-center py-8">
             No hay alumnos inscritos en esta clase.
@@ -118,15 +179,16 @@ export default async function AttendancePage({
         <AttendanceSheet
           classId={classId}
           enrollments={enrollments}
+          guestEnrollments={guestEnrollments}
           isCompleted={openClass.status === 'completed'}
         />
       )}
 
       {/* Sección de cancelaciones */}
-      {cancelledEnrollments.length > 0 && (
+      {(cancelledEnrollments.length > 0 || cancelledGuestEnrollments.length > 0) && (
         <div className="mt-8">
           <h2 className="font-headline text-title-md text-on-surface-variant mb-3">
-            Cancelaciones ({cancelledEnrollments.length})
+            Cancelaciones ({cancelledEnrollments.length + cancelledGuestEnrollments.length})
           </h2>
           <div className="space-y-2">
             {cancelledEnrollments.map((enrollment) => (
@@ -145,6 +207,25 @@ export default async function AttendancePage({
                     : 'bg-surface-container-low text-outline'
                 }`}>
                   {enrollment.status === 'late_cancelled' ? 'Cancelación tardía' : 'Canceló'}
+                </span>
+              </Card>
+            ))}
+            {cancelledGuestEnrollments.map((guest) => (
+              <Card key={guest.guestEnrollmentId} className="flex items-center gap-3 opacity-70 ml-4 border-l-2 border-primary/20">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-body text-sm font-semibold text-on-surface truncate">
+                      {guest.guestName}
+                    </p>
+                    <GuestBadge guestName={guest.guestName} origin={guest.origin} />
+                  </div>
+                </div>
+                <span className={`font-body text-xs px-2 py-1 rounded ${
+                  guest.status === 'late_cancelled'
+                    ? 'bg-error/10 text-error'
+                    : 'bg-surface-container-low text-outline'
+                }`}>
+                  {guest.status === 'late_cancelled' ? 'Cancelación tardía' : 'Canceló'}
                 </span>
               </Card>
             ))}

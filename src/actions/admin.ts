@@ -10,6 +10,7 @@ import {
   classEnrollments,
   userSubscriptions,
   users,
+  guestEnrollments,
 } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { sendClassCancellationEmail, sendPaymentRejectedEmail } from '@/lib/email/service';
@@ -559,9 +560,10 @@ export async function rejectPaymentAction(paymentId: string): Promise<ActionResu
 }
 
 
+
 export async function getSubscriptionEnrollmentsAction(
   subscriptionId: string
-): Promise<ActionResult & { enrollments?: Array<{ enrollmentId: string; classDate: string; classType: string; classStatus: string; enrollmentStatus: string; coachName: string }> }> {
+): Promise<ActionResult & { enrollments?: Array<{ enrollmentId: string; classDate: string; classType: string; classStatus: string; enrollmentStatus: string; coachName: string; guestName?: string }> }> {
   const session = await getSession();
   if (!session || session.role !== 'admin') {
     return { success: false, error: 'No tienes permisos para esta acción.' };
@@ -571,9 +573,15 @@ export async function getSubscriptionEnrollmentsAction(
     return { success: false, error: 'ID de suscripción no proporcionado.' };
   }
 
+  // Get the userId from the subscription to also query their guest enrollments
+  const userSub = await db.query.userSubscriptions.findFirst({
+    where: eq(userSubscriptions.id, subscriptionId),
+  });
+
   const results = await db
     .select({
       enrollmentId: classEnrollments.id,
+      classId: classEnrollments.openClassId,
       classDate: openClasses.classDate,
       classType: openClasses.classType,
       classStatus: openClasses.status,
@@ -585,6 +593,26 @@ export async function getSubscriptionEnrollmentsAction(
     .leftJoin(users, eq(openClasses.coachUserId, users.id))
     .where(eq(classEnrollments.userSubscriptionId, subscriptionId))
     .orderBy(desc(openClasses.classDate));
+
+  // Fetch guest enrollments registered by this user (for Open Lab users)
+  let guestsByClassId = new Map<string, string>();
+  if (userSub) {
+    const guestResults = await db
+      .select({
+        classId: guestEnrollments.openClassId,
+        guestName: guestEnrollments.guestName,
+        status: guestEnrollments.status,
+      })
+      .from(guestEnrollments)
+      .where(eq(guestEnrollments.registeredById, userSub.userId));
+
+    for (const g of guestResults) {
+      // Only show active guests (not cancelled)
+      if (g.status !== 'cancelled' && g.status !== 'late_cancelled') {
+        guestsByClassId.set(g.classId, g.guestName);
+      }
+    }
+  }
 
   const classTypeLabels: Record<string, string> = {
     yoga: 'Yoga',
@@ -621,6 +649,7 @@ export async function getSubscriptionEnrollmentsAction(
     classStatus: classStatusLabels[row.classStatus ?? ''] ?? row.classStatus ?? '',
     enrollmentStatus: enrollmentStatusLabels[row.enrollmentStatus ?? ''] ?? row.enrollmentStatus ?? '',
     coachName: row.coachName ?? 'Sin coach',
+    guestName: guestsByClassId.get(row.classId) ?? undefined,
   }));
 
   return { success: true, enrollments };

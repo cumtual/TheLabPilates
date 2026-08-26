@@ -1,6 +1,6 @@
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { EnrollButton } from './EnrollButton';
+import { EnrollWithGuestSection } from './EnrollWithGuestSection';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
 
 export interface ClassItem {
@@ -73,8 +73,9 @@ export function ClassList({ classes }: ClassListProps) {
                 <p className="font-body text-xs text-outline">
                   Capacidad: {classItem.enrolledCount}/{classItem.capacity ?? 0}
                 </p>
-                <EnrollButton classId={classItem.id} />
               </div>
+
+              <EnrollWithGuestSection classId={classItem.id} />
             </div>
           </Card>
         );
