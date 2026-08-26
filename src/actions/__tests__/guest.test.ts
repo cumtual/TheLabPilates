@@ -1220,7 +1220,9 @@ describe('Property 17: Agregar invitado a reserva existente atómicamente', () =
 
             // Should fail with capacity error
             expect(result.success).toBe(false);
-            expect(result.error).toContain('cupos');
+            if (!result.success) {
+              expect(result.error).toContain('cupos');
+            }
 
             // NO transaction should have been called — no mutation happened
             expect(db.transaction).not.toHaveBeenCalled();
@@ -1294,7 +1296,9 @@ describe('Property 17: Agregar invitado a reserva existente atómicamente', () =
 
             // Should fail gracefully
             expect(result.success).toBe(false);
-            expect(result.error).toContain('cupos');
+            if (!result.success) {
+              expect(result.error).toContain('cupos');
+            }
           }
         ),
         { numRuns: 100 }
@@ -1384,7 +1388,9 @@ describe('Property 17: Agregar invitado a reserva existente atómicamente', () =
 
             // Should fail with credit error
             expect(result.success).toBe(false);
-            expect(result.error).toContain('crédito');
+            if (!result.success) {
+              expect(result.error).toContain('crédito');
+            }
 
             // NO transaction should have been called — no mutation happened
             expect(db.transaction).not.toHaveBeenCalled();
@@ -1459,7 +1465,9 @@ describe('Property 17: Agregar invitado a reserva existente atómicamente', () =
 
             // Should fail gracefully
             expect(result.success).toBe(false);
-            expect(result.error).toContain('crédito');
+            if (!result.success) {
+              expect(result.error).toContain('crédito');
+            }
           }
         ),
         { numRuns: 100 }

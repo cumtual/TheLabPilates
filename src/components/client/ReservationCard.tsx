@@ -10,11 +10,13 @@ import { AddGuestButton } from './AddGuestButton';
 import { cancelReservationAction, confirmLateCancellationAction } from '@/actions/enrollment';
 import { addGuestToReservationAction } from '@/actions/guest';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 export interface ReservationItem {
   id: string;
   classDate: Date | string;
   classType: string | null;
+  customName?: string | null;
   coachName: string | null;
 }
 
@@ -32,12 +34,6 @@ export interface ReservationCardProps {
   /** Whether the user is eligible to add guests (Open Lab + credits) */
   isEligible?: boolean;
 }
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 export function ReservationCard({
   reservation,
@@ -131,9 +127,7 @@ export function ReservationCard({
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-1">
               <h3 className="font-body text-base font-semibold text-on-surface">
-                {reservation.classType
-                  ? classTypeLabels[reservation.classType] ?? reservation.classType
-                  : 'Clase'}
+                {getClassDisplayName(reservation.classType, reservation.customName)}
               </h3>
               <p className="font-body text-sm text-outline capitalize">
                 {formatFriendlyDate(reservation.classDate)}

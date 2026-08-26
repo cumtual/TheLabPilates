@@ -1,15 +1,10 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { getCoachClassById, getClassEnrollments, getCancelledEnrollments, getClassGuestEnrollments } from '@/lib/queries/coach';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
 import { AdminGuestSection } from '@/components/admin/AdminGuestSection';
 import { Card } from '@/components/ui/Card';
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
-};
 
 export default async function AdminAttendancePage({
   params,
@@ -56,7 +51,7 @@ export default async function AdminAttendancePage({
     registeredByName: g.registeredByName,
   }));
 
-  const typeLabel = classTypeLabels[openClass.classType ?? ''] ?? openClass.classType ?? 'Clase';
+  const typeLabel = getClassDisplayName(openClass.classType, openClass.customName);
   const dateFormatted = openClass.classDate
     ? new Date(openClass.classDate).toLocaleDateString('es-MX', {
         timeZone: 'America/Mexico_City',

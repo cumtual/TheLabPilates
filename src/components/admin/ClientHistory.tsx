@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Pagination } from '@/components/ui/Pagination';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 import type { BadgeVariant } from '@/components/ui/Badge';
 
 const PAGE_SIZE = 5;
@@ -34,6 +35,7 @@ interface PaymentRecord {
 interface AttendanceRecord {
   id: string;
   classType: string | null;
+  customName: string | null;
   classDate: string;
   status: string | null;
 }
@@ -52,12 +54,6 @@ const paymentTypeLabels: Record<string, string> = {
   cash: 'Efectivo',
   transfer: 'Transferencia',
   card: 'Tarjeta',
-};
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
 };
 
 const enrollmentStatusLabels: Record<string, string> = {
@@ -261,7 +257,7 @@ export function ClientHistory({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1 flex-1">
                     <p className="font-body text-sm font-semibold text-on-surface">
-                      {classTypeLabels[record.classType ?? ''] ?? record.classType ?? 'Clase'}
+                      {getClassDisplayName(record.classType, record.customName)}
                     </p>
                     {record.status && (
                       <Badge variant={enrollmentStatusVariant[record.status] ?? 'pending'}>

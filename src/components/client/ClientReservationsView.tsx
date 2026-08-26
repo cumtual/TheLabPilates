@@ -6,6 +6,7 @@ import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
 import { ReservationCard } from './ReservationCard';
 import { Pagination } from '@/components/ui/Pagination';
+import { getClassDisplayName } from '@/lib/utils/class-type';
 
 const PAGE_SIZE = 10;
 
@@ -19,6 +20,7 @@ export interface ReservationHistoryItem {
   classId: string;
   classDate: string;
   classType: string | null;
+  customName?: string | null;
   coachName: string | null;
   enrollmentStatus: string | null;
   /** Associated active guest enrollment, if any */
@@ -42,12 +44,6 @@ const filterLabels: Record<StatusFilter, string> = {
   absent: 'Ausencias',
   late_cancelled: 'Cancel. tardía',
   cancelled: 'Canceladas',
-};
-
-const classTypeLabels: Record<string, string> = {
-  yoga: 'Yoga',
-  mat_pilates: 'Mat Pilates',
-  barre: 'Barre',
 };
 
 const statusLabels: Record<string, string> = {
@@ -162,6 +158,7 @@ export function ClientReservationsView({ reservations, guestEligible }: ClientRe
                     id: reservation.id,
                     classDate: reservation.classDate,
                     classType: reservation.classType,
+                    customName: reservation.customName,
                     coachName: reservation.coachName,
                   }}
                   guest={reservation.guest}
@@ -177,9 +174,7 @@ export function ClientReservationsView({ reservations, guestEligible }: ClientRe
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-1">
                     <h3 className="font-body text-base font-semibold text-on-surface">
-                      {reservation.classType
-                        ? classTypeLabels[reservation.classType] ?? reservation.classType
-                        : 'Clase'}
+                      {getClassDisplayName(reservation.classType, reservation.customName)}
                     </h3>
                     <p className="font-body text-sm text-outline capitalize">
                       {formatFriendlyDate(reservation.classDate)}

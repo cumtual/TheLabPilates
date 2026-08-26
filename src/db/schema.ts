@@ -25,6 +25,7 @@ export const classTypeEnum = pgEnum('class_type', [
   'yoga',
   'mat_pilates',
   'barre',
+  'personalizada',
 ]);
 export const classStatusEnum = pgEnum('class_status', [
   'scheduled',
@@ -117,6 +118,7 @@ export const openClasses = pgTable('open_class', {
   capacity: integer('capacity'),
   available: classAvailabilityEnum('available').default('available'),
   classType: classTypeEnum('class_type'),
+  customName: varchar('custom_name', { length: 100 }),
   status: classStatusEnum('status').default('scheduled'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });

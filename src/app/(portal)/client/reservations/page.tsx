@@ -17,6 +17,7 @@ export interface ReservationHistoryItem {
   classId: string;
   classDate: string;
   classType: string | null;
+  customName?: string | null;
   coachName: string | null;
   enrollmentStatus: string | null;
   /** Associated active guest enrollment, if any */
@@ -41,6 +42,7 @@ export default async function ClientReservationsPage() {
         classId: openClasses.id,
         classDate: openClasses.classDate,
         classType: openClasses.classType,
+        customName: openClasses.customName,
         coachName: users.username,
         enrollmentStatus: classEnrollments.status,
       })
@@ -105,6 +107,7 @@ export default async function ClientReservationsPage() {
       classId: r.classId,
       classDate: r.classDate?.toISOString() ?? new Date().toISOString(),
       classType: r.classType,
+      customName: r.customName,
       coachName: r.coachName,
       enrollmentStatus: r.enrollmentStatus,
       guest: guestByClassId.get(r.classId) ?? null,

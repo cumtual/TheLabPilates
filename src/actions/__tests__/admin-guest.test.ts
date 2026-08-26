@@ -715,6 +715,12 @@ describe('Property 13: Admin agrega invitado correctamente', () => {
             id: classId,
             capacity: availableCapacity + 5, // some arbitrary capacity > occupied
             status: 'scheduled',
+            available: 'available',
+            createdAt: new Date(),
+            classDate: new Date(),
+            coachUserId: 'coach-1',
+            classType: 'yoga',
+            customName: null,
           });
 
           // Setup: available capacity has room
@@ -776,6 +782,12 @@ describe('Property 13: Admin agrega invitado correctamente', () => {
             id: classId,
             capacity: 10,
             status: 'scheduled',
+            available: 'available',
+            createdAt: new Date(),
+            classDate: new Date(),
+            coachUserId: 'coach-1',
+            classType: 'yoga',
+            customName: null,
           });
 
           // Setup: no available capacity
@@ -887,6 +899,12 @@ describe('Property 13: Admin agrega invitado correctamente', () => {
             id: classId,
             capacity: availableCapacity + 5,
             status: 'scheduled',
+            available: 'available',
+            createdAt: new Date(),
+            classDate: new Date(),
+            coachUserId: 'coach-1',
+            classType: 'yoga',
+            customName: null,
           });
           vi.mocked(getAvailableCapacity).mockResolvedValue(availableCapacity);
 
