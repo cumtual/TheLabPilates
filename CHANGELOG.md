@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/cumtual/TheLabPilates/compare/v1.4.0...v1.5.0) (2026-08-26)
+
+
+### Features
+
+* **guest:** add guest enrollment system with capacity and credit man… ([03f0068](https://github.com/cumtual/TheLabPilates/commit/03f0068ecc055d6d42e7d5f705f9f0aec89c7a67))
+* **guest:** add guest enrollment system with capacity and credit management ([da3bb42](https://github.com/cumtual/TheLabPilates/commit/da3bb4217b03762eb65d9fca2bed46f55364f123))
+
 ## [1.4.0](https://github.com/cumtual/TheLabPilates/compare/v1.3.0...v1.4.0) (2026-08-26)
 
 
