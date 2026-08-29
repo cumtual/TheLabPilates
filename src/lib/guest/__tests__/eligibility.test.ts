@@ -85,16 +85,23 @@ import { isUserOpenLabEligible, checkGuestEligibility } from '../eligibility';
 
 const uuidArb = fc.uuid();
 
-/** Generate a future date (not expired) */
+/**
+ * Generate a future date (not expired).
+ * noInvalidDate keeps the arbitrary strictly valid — fc.date() can otherwise
+ * emit an Invalid Date, which the eligibility check treats as "not expired"
+ * (NaN < now is false) and would silently break expiration assertions.
+ */
 const futureDateArb = fc.date({
   min: new Date(Date.now() + 1000 * 60), // at least 1 minute in the future
   max: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // up to 1 year
+  noInvalidDate: true,
 });
 
-/** Generate a past date (expired) */
+/** Generate a past date (expired). Strictly valid — see futureDateArb. */
 const pastDateArb = fc.date({
   min: new Date('2020-01-01'),
   max: new Date(Date.now() - 1000 * 60), // at least 1 minute in the past
+  noInvalidDate: true,
 });
 
 /** Generate a valid user subscription row */
@@ -310,12 +317,11 @@ describe('Guest Eligibility - Property-Based Tests', () => {
           subscriptionPlanArb.filter((s) => s.guest === true),
           paymentArb.filter((p) => p.confirmed === true),
           pastDateArb,
-          fc.integer({ min: 0, max: 1 }), // credits used (0 or 1)
-          async (userSub, subscription, payment, pastDate, creditsUsed) => {
+          async (userSub, subscription, payment, pastDate) => {
             resetMocks();
 
-            // Membership is expired (pastDate < now)
-            // Even with all other conditions perfect and credits available
+            // Membership is expired (pastDate < now).
+            // The expiration must dominate regardless of the credits state.
             const row = {
               userSub: { ...userSub, expirationDate: pastDate },
               subscription: { ...subscription, guest: true },

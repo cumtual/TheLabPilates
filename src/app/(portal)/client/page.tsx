@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { ClientDashboardError } from '@/components/client/ClientDashboardError';
-import { TIMEZONE } from '@/lib/utils/date';
+import { formatFullDateTime } from '@/lib/utils/date';
 import { getGuestCreditsForCycle } from '@/lib/guest/credits';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 
@@ -174,14 +174,7 @@ export default async function ClientDashboardPage() {
             </p>
             <p className="font-body text-base text-on-surface capitalize">
               {nextClass.classDate
-                ? new Date(nextClass.classDate).toLocaleDateString('es-MX', {
-                    timeZone: TIMEZONE,
-                    weekday: 'long',
-                    day: 'numeric',
-                    month: 'long',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
+                ? formatFullDateTime(new Date(nextClass.classDate), false)
                 : 'Sin fecha'}
             </p>
             {nextClass.coachName && (

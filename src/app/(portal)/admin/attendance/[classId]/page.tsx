@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { getCoachClassById, getClassEnrollments, getCancelledEnrollments, getClassGuestEnrollments } from '@/lib/queries/coach';
 import { getClassDisplayName } from '@/lib/utils/class-type';
+import { formatFullDateTime } from '@/lib/utils/date';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
 import { AdminGuestSection } from '@/components/admin/AdminGuestSection';
 import { Card } from '@/components/ui/Card';
@@ -53,15 +54,7 @@ export default async function AdminAttendancePage({
 
   const typeLabel = getClassDisplayName(openClass.classType, openClass.customName);
   const dateFormatted = openClass.classDate
-    ? new Date(openClass.classDate).toLocaleDateString('es-MX', {
-        timeZone: 'America/Mexico_City',
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
+    ? formatFullDateTime(new Date(openClass.classDate))
     : 'Sin fecha';
 
   return (
