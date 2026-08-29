@@ -40,11 +40,46 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
+  notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
 }));
 
 import { cancelReservationAction, confirmLateCancellationAction } from '../enrollment';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
+
+/**
+ * Mocks the two db.select chains cancelReservationAction runs before the date check,
+ * in call order:
+ * 1. Open Lab check:   db.select({...}).from(...).leftJoin(...).where(...) → [{ guest }]
+ * 2. Active guest check: db.select({...}).from(...).where(...) → rows
+ *
+ * Defaults model the common path: a regular (non-Open Lab) subscription with no
+ * associated guest, so the cancellation proceeds to the date/transaction logic.
+ */
+function setupCancelSelectMock(options: { isOpenLab?: boolean; activeGuests?: unknown[] } = {}) {
+  const { isOpenLab = false, activeGuests = [] } = options;
+
+  let callIndex = 0;
+  (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    callIndex++;
+    if (callIndex === 1) {
+      // Open Lab check chain: .from().leftJoin().where()
+      return {
+        from: vi.fn().mockReturnValue({
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ guest: isOpenLab }]),
+          }),
+        }),
+      };
+    }
+    // Active guest check chain: .from().where()
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(activeGuests),
+      }),
+    };
+  });
+}
 
 // Helper to create a future date at least N hours ahead
 function futureDateHoursAhead(hours: number): Date {
@@ -98,6 +133,9 @@ describe('Property 18: Timely Cancellation Refunds Credit', () => {
             status: 'pending',
             createdAt: new Date(),
           });
+
+          // Regular subscription, no associated guest → proceeds to date/transaction logic
+          setupCancelSelectMock();
 
           // Mock class: future date ≥24h away
           const classDate = futureDateHoursAhead(hoursUntilClass);
@@ -305,6 +343,9 @@ describe('Property 20: Non-Eligible Enrollment Cancellation Block', () => {
             status: 'pending',
             createdAt: new Date(),
           });
+
+          // Regular subscription, no associated guest → proceeds to the past-date check
+          setupCancelSelectMock();
 
           // Mock class: past date
           const classDate = pastDate(daysAgo);

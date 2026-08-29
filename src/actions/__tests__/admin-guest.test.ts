@@ -627,11 +627,17 @@ describe('Property 15: Eliminación admin restaura cupo', () => {
 
 // ─── Property 13: Admin agrega invitado correctamente ──────────────────────────
 
-/** Invalid admin guest name: empty or >100 chars after trim */
+/**
+ * Invalid admin guest name: empty (or whitespace-only) or > 100 chars after trim.
+ * The "too long" case uses non-whitespace characters so that trimming cannot
+ * shrink it back into the valid 1-100 range.
+ */
 const invalidAdminGuestNameArb = fc.oneof(
   fc.constant(''),
   fc.constant('   '),
-  fc.string({ minLength: 101, maxLength: 150 })
+  fc
+    .integer({ min: 101, max: 150 })
+    .map((length) => 'a'.repeat(length))
 );
 
 /** Available capacity >= 1 (class has room) */

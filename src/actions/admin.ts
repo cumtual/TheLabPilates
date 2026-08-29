@@ -17,7 +17,7 @@ import { sendClassCancellationEmail, sendPaymentRejectedEmail } from '@/lib/emai
 import type { ActionResult } from '@/lib/types';
 import { ALL_ROLES } from '@/lib/types/roles';
 import type { UserRole } from '@/lib/types/roles';
-import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
+import { parseDateTimeLocalAsMexicoCity, formatShortDateTime } from '@/lib/utils/date';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 
 export async function cancelClassAction(classId: string): Promise<ActionResult> {
@@ -644,13 +644,7 @@ export async function getSubscriptionEnrollmentsAction(
   const enrollments = results.map((row) => ({
     enrollmentId: row.enrollmentId,
     classDate: row.classDate
-      ? new Date(row.classDate).toLocaleDateString('es-MX', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
+      ? formatShortDateTime(new Date(row.classDate))
       : 'Sin fecha',
     classType: getClassDisplayName(row.classType ?? null, row.customName ?? null),
     classStatus: classStatusLabels[row.classStatus ?? ''] ?? row.classStatus ?? '',

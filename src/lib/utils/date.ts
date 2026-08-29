@@ -2,9 +2,36 @@
 export const TIMEZONE = 'America/Mexico_City';
 
 /**
+ * Formatea la hora de una fecha en formato 12h con meridiano explícito "A.M."/"P.M."
+ * en mayúsculas y con puntos, de forma determinística (independiente del entorno/ICU).
+ * Siempre usa horario America/Mexico_City.
+ * Ejemplo: "09:00 A.M.", "01:30 P.M.", "12:00 P.M." (mediodía), "12:00 A.M." (medianoche).
+ */
+export function formatTimeWithMeridiem(date: Date | string | null): string {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(d);
+
+  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
+  const dayPeriodRaw = parts.find((p) => p.type === 'dayPeriod')?.value ?? '';
+  // Normaliza a "A.M." / "P.M." sin importar cómo lo devuelva el runtime ("AM", "a.m.", "a. m.", etc.)
+  const meridiem = /p/i.test(dayPeriodRaw) ? 'P.M.' : 'A.M.';
+
+  return `${hour}:${minute} ${meridiem}`;
+}
+
+/**
  * Formatea una fecha de forma amigable para el usuario.
  * Siempre muestra en horario America/Mexico_City.
- * Ejemplo: "Lunes 28 de julio, 2025 — 09:00"
+ * Ejemplo: "Lunes 28 de julio, 2025 — 09:00 A.M."
  */
 export function formatFriendlyDate(date: Date | string | null): string {
   if (!date) return 'Sin fecha';
@@ -19,15 +46,38 @@ export function formatFriendlyDate(date: Date | string | null): string {
     year: 'numeric',
   });
 
-  const time = d.toLocaleTimeString('es-MX', {
-    timeZone: TIMEZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  const time = formatTimeWithMeridiem(d);
 
   // Capitalizar primera letra
   return `${formatted.charAt(0).toUpperCase()}${formatted.slice(1)} — ${time}`;
+}
+
+/**
+ * Formatea una fecha larga con hora en formato 12h con meridiano explícito.
+ * Ejemplo: "lunes 28 de julio de 2025, 09:00 A.M."
+ * Siempre usa horario America/Mexico_City.
+ *
+ * @param includeYear si false, omite el año (útil para "próxima clase" cercana).
+ */
+export function formatFullDateTime(
+  date: Date | string | null,
+  includeYear: boolean = true
+): string {
+  if (!date) return 'Sin fecha';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return 'Fecha inválida';
+
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    timeZone: TIMEZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  };
+  if (includeYear) dateOptions.year = 'numeric';
+
+  const datePart = d.toLocaleDateString('es-MX', dateOptions);
+  const time = formatTimeWithMeridiem(d);
+  return `${datePart}, ${time}`;
 }
 
 /**
@@ -53,7 +103,7 @@ export function formatShortDate(date: Date | string | null): string {
 }
 
 /**
- * Formatea fecha con hora corta: "28/07/2025 — 09:00"
+ * Formatea fecha con hora corta: "28/07/2025 — 09:00 A.M."
  * Siempre muestra en horario America/Mexico_City.
  */
 export function formatShortDateTime(date: Date | string | null): string {
@@ -65,18 +115,14 @@ export function formatShortDateTime(date: Date | string | null): string {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
     timeZone: TIMEZONE,
   }).formatToParts(d);
 
   const day = parts.find((p) => p.type === 'day')!.value;
   const month = parts.find((p) => p.type === 'month')!.value;
   const year = parts.find((p) => p.type === 'year')!.value;
-  const hours = parts.find((p) => p.type === 'hour')!.value;
-  const minutes = parts.find((p) => p.type === 'minute')!.value;
-  return `${day}/${month}/${year} — ${hours}:${minutes}`;
+  const time = formatTimeWithMeridiem(d);
+  return `${day}/${month}/${year} — ${time}`;
 }
 
 /**

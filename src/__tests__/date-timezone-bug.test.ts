@@ -43,8 +43,9 @@ describe('Bug Condition: Timezone-Normalized Rendering (Property 1)', () => {
 
     const result = formatFriendlyDate(dateInMexCity);
 
-    // Should show "23:30" (Mexico City time), not "01:30" (Eastern time next day)
-    expect(result).toContain('23:30');
+    // Should show "11:30 P.M." (Mexico City time in 12h format),
+    // not "01:30" (Eastern time next day)
+    expect(result).toContain('11:30 P.M.');
     // Should show Monday (lunes) July 28, not Tuesday July 29
     expect(result.toLowerCase()).toContain('lunes');
   });
@@ -73,9 +74,10 @@ describe('Bug Condition: Timezone-Normalized Rendering (Property 1)', () => {
 
     const result = formatShortDateTime(dateInMexCity);
 
-    // Should contain "09:00" (Mexico City), not "11:00" (Eastern)
-    expect(result).toContain('09:00');
-    expect(result).toBe('28/07/2025 — 09:00');
+    // Should contain "09:00 A.M." (Mexico City), not "11:00" (Eastern).
+    // Time is rendered in 12h format with explicit meridiem.
+    expect(result).toContain('09:00 A.M.');
+    expect(result).toBe('28/07/2025 — 09:00 A.M.');
   });
 
   /**
@@ -110,17 +112,23 @@ describe('Bug Condition: Timezone-Normalized Rendering (Property 1)', () => {
       fc.property(
         // Generate dates in 2025 with various hours, using Mexico City offset (UTC-6)
         fc.integer({ min: 0, max: 23 }).chain((hour) =>
-          fc.integer({ min: 0, max: 59 }).map((minute) => ({
-            // Mexico City is UTC-6 year-round
-            isoString: `2025-07-15T${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00-06:00`,
-            expectedHour: hour.toString().padStart(2, '0'),
-            expectedMinute: minute.toString().padStart(2, '0'),
-          }))
+          fc.integer({ min: 0, max: 59 }).map((minute) => {
+            // Convert 24h hour to expected 12h format with explicit meridiem
+            const meridiem = hour < 12 ? 'A.M.' : 'P.M.';
+            const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+            return {
+              // Mexico City is UTC-6 year-round
+              isoString: `2025-07-15T${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00-06:00`,
+              expectedTime: `${hour12.toString().padStart(2, '0')}:${minute
+                .toString()
+                .padStart(2, '0')} ${meridiem}`,
+            };
+          })
         ),
-        ({ isoString, expectedHour, expectedMinute }) => {
+        ({ isoString, expectedTime }) => {
           const result = formatShortDateTime(isoString);
-          // The output should contain the Mexico City hour:minute
-          expect(result).toContain(`${expectedHour}:${expectedMinute}`);
+          // The output should contain the Mexico City time in 12h meridiem format
+          expect(result).toContain(expectedTime);
         }
       ),
       { numRuns: 50 }

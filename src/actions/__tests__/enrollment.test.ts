@@ -21,6 +21,12 @@ vi.mock('@/lib/auth/session', () => ({
   getSession: vi.fn(),
 }));
 
+// Capacity is computed by a dedicated helper; mock it so enrollInClassAction's
+// capacity gate is driven by the test instead of hitting the real query chain.
+vi.mock('@/lib/guest/capacity', () => ({
+  getAvailableCapacity: vi.fn(),
+}));
+
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
 }));
@@ -48,6 +54,7 @@ vi.mock('drizzle-orm', () => ({
 import { enrollInClassAction } from '../enrollment';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
+import { getAvailableCapacity } from '@/lib/guest/capacity';
 
 // Helper to create a future date
 function futureDate(daysAhead = 7): Date {
@@ -64,42 +71,43 @@ function pastDate(daysAgo = 7): Date {
 }
 
 /**
- * Helper to set up the db.select mock that handles:
- * 1. Subscription query: db.select({...}).from(...).leftJoin(...).where(...)
- * 2. Count query: db.select({...}).from(...).where(...)
- * 3. Duplicate check query: db.select({...}).from(...).innerJoin(...).where(...)
+ * Sets up the two db.select query chains used by enrollInClassAction, in order:
+ * 1. Subscription query: db.select({...}).from(...).leftJoin(...).leftJoin(...).where(...)
+ * 2. Duplicate check:    db.select({...}).from(...).innerJoin(...).where(...)
+ *
+ * Capacity is a separate concern handled by the mocked getAvailableCapacity helper;
+ * each test sets it explicitly via mockAvailableCapacity() to express its intent.
  */
-function setupSelectMock(subscriptionResult: unknown[], countResult: { count: number }, duplicateResult: unknown[] = []) {
+function setupSelectMock(subscriptionResult: unknown[], duplicateResult: unknown[] = []) {
   let callIndex = 0;
   (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
     callIndex++;
     if (callIndex === 1) {
-      // Subscription query chain: .from().leftJoin().where()
+      // Subscription query chain: .from().leftJoin().leftJoin().where()
       return {
         from: vi.fn().mockReturnValue({
           leftJoin: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue(subscriptionResult),
-          }),
-        }),
-      };
-    } else if (callIndex === 2) {
-      // Count query chain: .from().where()
-      return {
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([countResult]),
-        }),
-      };
-    } else {
-      // Duplicate check query chain: .from().innerJoin().where()
-      return {
-        from: vi.fn().mockReturnValue({
-          innerJoin: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue(duplicateResult),
+            leftJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue(subscriptionResult),
+            }),
           }),
         }),
       };
     }
+    // Duplicate check query chain: .from().innerJoin().where()
+    return {
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(duplicateResult),
+        }),
+      }),
+    };
   });
+}
+
+/** Sets the number of available spots returned by the capacity gate. */
+function mockAvailableCapacity(spots: number) {
+  (getAvailableCapacity as ReturnType<typeof vi.fn>).mockResolvedValue(spots);
 }
 
 /**
@@ -197,7 +205,8 @@ describe('Property 12: Enrollment Prerequisites Gate', () => {
               ? []
               : [{ userSub, payment }];
 
-          setupSelectMock(subscriptionResult, { count: 3 });
+          setupSelectMock(subscriptionResult);
+          mockAvailableCapacity(10); // plenty of room — capacity is not the tested prerequisite here
 
           // Mock class query
           (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -280,7 +289,8 @@ describe('Property 15: Duplicate Enrollment Prevention', () => {
             createdAt: new Date(),
           };
 
-          setupSelectMock([{ userSub, payment }], { count: 3 }, [{ id: existingEnrollmentId }]);
+          setupSelectMock([{ userSub, payment }], [{ id: existingEnrollmentId }]);
+          mockAvailableCapacity(10); // room available — the block comes from the duplicate enrollment
 
           // Mock class query - valid scheduled future class
           (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -326,15 +336,13 @@ describe('Property 16: Capacity-Based Enrollment Gate', () => {
     vi.clearAllMocks();
   });
 
-  it('enrollment blocked when enrollment count >= capacity', async () => {
+  it('enrollment blocked when class is full (no available capacity)', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.uuid(),
         fc.integer({ min: 1, max: 20 }),
-        fc.integer({ min: 0, max: 10 }),
-        async (classId, capacity, extraOverCapacity) => {
+        async (classId, capacity) => {
           vi.clearAllMocks();
-          const enrollmentCount = capacity + extraOverCapacity; // always >= capacity
 
           // Mock authenticated session
           (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -363,7 +371,8 @@ describe('Property 16: Capacity-Based Enrollment Gate', () => {
             createdAt: new Date(),
           };
 
-          setupSelectMock([{ userSub, payment }], { count: enrollmentCount });
+          setupSelectMock([{ userSub, payment }]);
+          mockAvailableCapacity(0); // class is full: enrollmentCount >= capacity leaves no spots
 
           // Mock class query - valid scheduled future class with given capacity
           (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -445,7 +454,8 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
             createdAt: new Date(),
           };
 
-          setupSelectMock([{ userSub, payment }], { count: 3 }, []);
+          setupSelectMock([{ userSub, payment }], []);
+          mockAvailableCapacity(10); // room available so enrollment can proceed
 
           // Mock class query - valid scheduled future class
           (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -507,7 +517,7 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
           });
 
           // No active subscription (empty result)
-          setupSelectMock([], { count: 0 });
+          setupSelectMock([]);
 
           (db.transaction as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 

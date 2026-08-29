@@ -86,10 +86,10 @@ describe('Preservation: Format Structure and Fallback Consistency (Property 2)',
 
     /**
      * formatFriendlyDate output structure: starts with uppercase letter,
-     * contains " — " separator, ends with HH:MM pattern.
-     * Pattern: ^[A-ZÁÉÍÓÚÑ].+ — \d{2}:\d{2}$
+     * contains " — " separator, ends with HH:MM meridiem pattern.
+     * Pattern: ^[A-ZÁÉÍÓÚÑ].+ — \d{2}:\d{2} (A|P)\.M\.$
      */
-    it('formatFriendlyDate always matches capitalized weekday + " — " + HH:MM structure', () => {
+    it('formatFriendlyDate always matches capitalized weekday + " — " + HH:MM meridiem structure', () => {
       fc.assert(
         fc.property(validDateArb, (dateStr) => {
           const result = formatFriendlyDate(dateStr);
@@ -97,8 +97,8 @@ describe('Preservation: Format Structure and Fallback Consistency (Property 2)',
           expect(result).toMatch(/^[A-ZÁÉÍÓÚÑ]/);
           // Contains the separator
           expect(result).toContain(' — ');
-          // Ends with HH:MM
-          expect(result).toMatch(/\d{2}:\d{2}$/);
+          // Ends with HH:MM A.M./P.M. (12h format with explicit meridiem)
+          expect(result).toMatch(/\d{2}:\d{2} (A|P)\.M\.$/);
         }),
         { numRuns: 100 }
       );
@@ -119,14 +119,14 @@ describe('Preservation: Format Structure and Fallback Consistency (Property 2)',
     });
 
     /**
-     * formatShortDateTime always returns DD/MM/YYYY — HH:MM format.
-     * Pattern: ^\d{2}/\d{2}/\d{4} — \d{2}:\d{2}$
+     * formatShortDateTime always returns DD/MM/YYYY — HH:MM meridiem format.
+     * Pattern: ^\d{2}/\d{2}/\d{4} — \d{2}:\d{2} (A|P)\.M\.$
      */
-    it('formatShortDateTime always matches DD/MM/YYYY — HH:MM pattern', () => {
+    it('formatShortDateTime always matches DD/MM/YYYY — HH:MM meridiem pattern', () => {
       fc.assert(
         fc.property(validDateArb, (dateStr) => {
           const result = formatShortDateTime(dateStr);
-          expect(result).toMatch(/^\d{2}\/\d{2}\/\d{4} — \d{2}:\d{2}$/);
+          expect(result).toMatch(/^\d{2}\/\d{2}\/\d{4} — \d{2}:\d{2} (A|P)\.M\.$/);
         }),
         { numRuns: 100 }
       );

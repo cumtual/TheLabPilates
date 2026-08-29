@@ -5,7 +5,7 @@ import { adminCreateClassAction } from '@/actions/admin';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
-import { TIMEZONE } from '@/lib/utils/date';
+import { parseDateTimeLocalAsMexicoCity, formatFullDateTime } from '@/lib/utils/date';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
@@ -29,16 +29,12 @@ interface AdminCreateClassFormProps {
 
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('es-MX', {
-    timeZone: TIMEZONE,
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  // El input datetime-local devuelve un string sin timezone (ej: "2025-08-28T09:00").
+  // Debe interpretarse como hora de Ciudad de México (igual que la server action),
+  // NO como la hora local del navegador. De lo contrario, un admin en otra zona
+  // horaria (ej: Nueva York) vería la hora desplazada.
+  const d = parseDateTimeLocalAsMexicoCity(dateStr);
+  return formatFullDateTime(d);
 }
 
 export function AdminCreateClassForm({ coaches }: AdminCreateClassFormProps) {

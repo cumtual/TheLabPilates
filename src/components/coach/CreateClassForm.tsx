@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
 import { getClassDisplayName } from '@/lib/utils/class-type';
+import { parseDateTimeLocalAsMexicoCity, formatFullDateTime } from '@/lib/utils/date';
 
 const classTypeOptions = [
   { value: 'yoga', label: 'Yoga' },
@@ -17,16 +18,11 @@ const classTypeOptions = [
 
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('es-MX', {
-    timeZone: 'America/Mexico_City',
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  // El input datetime-local devuelve un string sin timezone. Debe interpretarse como
+  // hora de Ciudad de México (igual que la server action createClassAction), no como
+  // la hora local del navegador, para no desplazar la hora en otras zonas horarias.
+  const d = parseDateTimeLocalAsMexicoCity(dateStr);
+  return formatFullDateTime(d);
 }
 
 export function CreateClassForm() {
