@@ -53,11 +53,44 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
+  notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
 }));
 
 import { cancelReservationAction } from '@/actions/enrollment';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
+
+/**
+ * Mocks the two db.select chains cancelReservationAction runs before the date check,
+ * in call order:
+ * 1. Open Lab check:     db.select({...}).from(...).leftJoin(...).where(...) → [{ guest }]
+ * 2. Active guest check: db.select({...}).from(...).where(...) → rows
+ *
+ * Defaults model a regular (non-Open Lab) subscription with no associated guest,
+ * so the cancellation proceeds to the date/transaction logic.
+ */
+function setupCancelSelectMock(options: { isOpenLab?: boolean; activeGuests?: unknown[] } = {}) {
+  const { isOpenLab = false, activeGuests = [] } = options;
+
+  let callIndex = 0;
+  (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    callIndex++;
+    if (callIndex === 1) {
+      return {
+        from: vi.fn().mockReturnValue({
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{ guest: isOpenLab }]),
+          }),
+        }),
+      };
+    }
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(activeGuests),
+      }),
+    };
+  });
+}
 
 // Helper to create a future date N hours ahead from now
 function futureDateHoursAhead(hours: number): Date {
@@ -111,6 +144,9 @@ describe('Preservation Property 1: Timely Cancellation Still Refunds Credit', ()
             status: 'pending',
             createdAt: new Date(),
           });
+
+          // Regular subscription, no associated guest → proceeds to date/transaction logic
+          setupCancelSelectMock();
 
           // Mock class: future date ≥24h away
           const classDate = futureDateHoursAhead(hoursUntilClass);
@@ -336,6 +372,9 @@ describe('Preservation Property 4: Past Class Block Preservation', () => {
             status: 'pending',
             createdAt: new Date(),
           });
+
+          // Regular subscription, no associated guest → proceeds to the past-date check
+          setupCancelSelectMock();
 
           // Mock class: past date
           const classDate = pastDate(daysAgo);

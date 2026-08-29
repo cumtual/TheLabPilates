@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { formatFullDateTime } from '@/lib/utils/date';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'The Lab Pilates Studio <noreply@thelabpilatesstudio.com.mx>';
@@ -76,15 +77,7 @@ export async function sendClassCancellationEmail(
   recipients: { email: string; name: string }[],
   classInfo: { type: string; date: Date; coachName: string }
 ): Promise<void> {
-  const formattedDate = classInfo.date.toLocaleDateString('es-MX', {
-    timeZone: 'America/Mexico_City',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const formattedDate = formatFullDateTime(classInfo.date);
 
   for (const recipient of recipients) {
     await sendEmail({
