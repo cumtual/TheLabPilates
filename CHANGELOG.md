@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/cumtual/TheLabPilates/compare/v1.7.1...v1.8.0) (2026-09-12)
+
+
+### Features
+
+* **profile:** implement user profile management with name and passwo… ([4ee3f0c](https://github.com/cumtual/TheLabPilates/commit/4ee3f0c6da8da43466399dbc44621e77844760a9))
+
 ## [1.7.1](https://github.com/cumtual/TheLabPilates/compare/v1.7.0...v1.7.1) (2026-09-12)
 
 
