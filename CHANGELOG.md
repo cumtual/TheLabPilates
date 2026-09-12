@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/cumtual/TheLabPilates/compare/v1.7.0...v1.7.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **location:** update street address for accuracy in Location component ([a4fecb7](https://github.com/cumtual/TheLabPilates/commit/a4fecb79f9cdc0a7e092e37bd348133d606c4043))
+* **location:** update street address for accuracy in Location component ([fb42f45](https://github.com/cumtual/TheLabPilates/commit/fb42f45a2e4d24bcb3f6fca599baa3c2371036f9))
+
 ## [1.7.0](https://github.com/cumtual/TheLabPilates/compare/v1.6.0...v1.7.0) (2026-09-12)
 
 
