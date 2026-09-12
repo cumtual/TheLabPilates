@@ -153,6 +153,7 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
   }
 
   revalidatePath('/admin/classes');
+  revalidatePath('/');
   return { success: true, message: 'Clase cancelada. Créditos restaurados a los alumnos.' };
 }
 
@@ -545,6 +546,7 @@ export async function adminCreateClassAction(
     });
 
     revalidatePath('/admin/classes');
+  revalidatePath('/');
     return { success: true, message: '¡Clase creada exitosamente!' };
   } catch {
     return { success: false, error: 'Error al crear la clase. Intenta de nuevo.' };

@@ -23,6 +23,10 @@ vi.mock('next/headers', () => ({
   }),
 }));
 
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
+
 import { createClassAction } from '../coach';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
