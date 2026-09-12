@@ -24,11 +24,13 @@ const menuItems: Record<UserRole, MenuItem[]> = {
     { label: 'Clases', href: '/client/classes', icon: 'fitness_center' },
     { label: 'Suscripción', href: '/client/subscription', icon: 'card_membership' },
     { label: 'Reservaciones', href: '/client/reservations', icon: 'calendar_today' },
+    { label: 'Mi Perfil', href: '/client/profile', icon: 'account_circle' },
   ],
   coach: [
     { label: 'Dashboard', href: '/coach', icon: 'dashboard' },
     { label: 'Clases', href: '/coach/classes', icon: 'fitness_center' },
     { label: 'Nueva Clase', href: '/coach/classes/new', icon: 'add_circle' },
+    { label: 'Mi Perfil', href: '/coach/profile', icon: 'account_circle' },
   ],
   admin: [
     { label: 'Dashboard', href: '/admin', icon: 'dashboard' },
@@ -37,6 +39,7 @@ const menuItems: Record<UserRole, MenuItem[]> = {
     { label: 'Usuarios', href: '/admin/users', icon: 'group' },
     { label: 'Suscripciones', href: '/admin/subscriptions', icon: 'card_membership' },
     { label: 'Tarjetas', href: '/admin/debit-cards', icon: 'credit_card' },
+    { label: 'Mi Perfil', href: '/admin/profile', icon: 'account_circle' },
   ],
 };
 

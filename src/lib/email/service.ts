@@ -130,3 +130,20 @@ export async function sendPaymentRejectedEmail(
     `,
   });
 }
+
+export async function sendPasswordChangedEmail(
+  email: string,
+  name: string
+): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: 'Tu contraseña fue actualizada - The Lab Pilates Studio',
+    html: `
+      <h1>Contraseña actualizada</h1>
+      <p>Hola ${name},</p>
+      <p>Te confirmamos que la contraseña de tu cuenta fue actualizada el <strong>${formatFullDateTime(new Date())}</strong>.</p>
+      <p>Si no realizaste este cambio, contacta de inmediato al estudio para proteger tu cuenta.</p>
+      <p>— The Lab Pilates Studio</p>
+    `,
+  });
+}
