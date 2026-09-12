@@ -24,15 +24,15 @@ export default function Footer() {
             </a>
             <a
               className="text-[12px] font-semibold tracking-widest text-on-surface-variant hover:text-primary transition-colors uppercase"
-              href="#"
+              href="/aviso-de-privacidad"
             >
-              Privacy
+              Privacidad
             </a>
             <a
               className="text-[12px] font-semibold tracking-widest text-on-surface-variant hover:text-primary transition-colors uppercase"
-              href="#"
+              href="/terminos-y-condiciones"
             >
-              Terms
+              Términos
             </a>
           </div>
           <div className="md:text-right mt-4">

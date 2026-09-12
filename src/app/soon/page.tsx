@@ -90,16 +90,16 @@ export default function SoonPage() {
             Instagram
           </a>
           <a
-            href="#"
+            href="/aviso-de-privacidad"
             className="text-[12px] font-semibold uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
           >
-            Privacy Policy
+            Privacidad
           </a>
           <a
-            href="#"
+            href="/terminos-y-condiciones"
             className="text-[12px] font-semibold uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
           >
-            Terms
+            Términos
           </a>
         </div>
       </footer>
