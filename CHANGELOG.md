@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.7.0](https://github.com/cumtual/TheLabPilates/compare/v1.6.0...v1.7.0) (2026-09-12)
+
+
+### Features
+
+* **client:** add unique IDs for GuestToggle accessibility ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **sections:** implement rolling week functionality for class scheduling ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+
+
+### Bug Fixes
+
+* **auth:** update links from "/soon" to "/login" in various components ([6affe7e](https://github.com/cumtual/TheLabPilates/commit/6affe7ec0ce4f130cee2659406bcf3e9ee5b8b02))
+* **auth:** update links from "/soon" to "/login" in various components ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **layout:** change Navbar access link to "/login" ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **middleware:** refine authentication page checks for better route protection ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **queries:** update subscription expiration logic to include new conditions ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **sections:** translate pricing session labels to Spanish and update features ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **sections:** update Hero and Location components to link to "/login" ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+
 ## [1.6.0](https://github.com/cumtual/TheLabPilates/compare/v1.5.0...v1.6.0) (2026-08-26)
 
 
