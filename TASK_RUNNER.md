@@ -1,47 +1,42 @@
-# TASK_RUNNER.md — Landing: listado dinámico de clases (rolling week)
+# TASK_RUNNER.md — Páginas legales (México): Aviso de Privacidad y Términos
 
-## Diagnóstico
+## Contexto
+La landing compone páginas públicas con `<Navbar/> + <main> + <Footer/> + <div className="grain"/>`.
+No hay LandingLayout. Navbar fijo (`fixed top-0 z-50`) → el contenido requiere `pt-32`.
+Tokens: `font-headline` (Playfair), `font-body` (Inter), `text-soft-charcoal`,
+`text-on-surface-variant`, `text-primary`, `bg-surface-container-low`, `border-outline-variant`,
+`py-section-gap`. Rutas nuevas, públicas (no están en el matcher del middleware).
 
-`src/components/sections/ScheduleClient.tsx:9` tiene `const COMING_SOON = true`, que fuerza el
-branch "Próximamente" (L36–47). Debajo ya existe todo el diseño (picker, tarjetas, empty states).
-El servidor `src/components/sections/Schedule.tsx` consulta `open_classes` con semana ISO
-(Lunes→Domingo), sin filtrar clases pasadas ni cupos.
-
-Brechas: (1) rolling D0–D6 desde hoy; (2) excluir clases ya iniciadas/pasadas y canceladas;
-(3) cupos → "N lugares" / badge SOLD OUT; (4) empty state sin layout shift; (5) targets táctiles
-44px. CTA "Reservar" → `/login`.
+Responsable confirmado: **The Lab Pilates Studio** · Matamoros & Calle Prolongación de Micaela
+Galindo, Centro, 69000 Heroica Cdad. de Huajuapan de León, Oax. · contacto@thelabpilatesstudio.com.mx.
 
 ---
 
-### TASK-LANDING-SCHEDULE-01 · Helpers puros de rolling week
-- **Archivo (nuevo):** `src/components/sections/schedule-utils.ts`
-- **Contenido:** `getRollingWeekRange(now)` (hoy 00:00 → +6d 23:59:59), `getRollingDayIndex(classDate, start)` (0..6),
-  `getRollingDays(start)` (7 labels `{label, sub}` con `Intl.DateTimeFormat('es-MX')`).
+### TASK-LEGAL-SHELL · `src/components/legal/LegalShell.tsx`
+- Wrapper (server component) con `Navbar`, `main` (`pt-32 pb-section-gap px-4 sm:px-6 lg:px-8`),
+  `article` (`max-w-3xl mx-auto`), link "Volver al inicio", título, fecha, `children`, `Footer`, `grain`.
+- Exporta también `LegalSection` (h2 + cuerpo con `leading-relaxed`).
 - **Verificación:** `pnpm exec tsc --noEmit`
 
-### TASK-LANDING-SCHEDULE-02 · Query rolling + futuro + cupos
-- **Archivo:** `src/components/sections/Schedule.tsx`
-- **Cambios:** usar `getRollingWeekRange(now)`; `where` += `gte(openClasses.classDate, now)`;
-  select += `capacity`; conteo de ocupación por `openClassId` (class + guest enrollments activos,
-  excluyendo cancelled/late_cancelled, con `inArray` + 2 `groupBy` + `Map`); `WeekClass` += `spotsLeft`;
-  `dayIndex = getRollingDayIndex(...)`; pasar `days={getRollingDays(start)}` al cliente.
+### TASK-PAGE-PRIVACY · `src/app/aviso-de-privacidad/page.tsx`
+- Metadata + `LegalShell`. Secciones: Responsable, datos recabados, finalidades primarias y
+  secundarias, derechos ARCO (20 días hábiles), cookies/JWT, cambios al aviso.
+- **Verificación:** `pnpm exec eslint "src/app/aviso-de-privacidad/page.tsx"`
+
+### TASK-PAGE-TERMS · `src/app/terminos-y-condiciones/page.tsx`
+- Metadata + `LegalShell`. Cláusulas: aceptación, membresías (Open Lab / créditos / suspendidas),
+  reservas y cancelación 24 h, uso responsable, aptitud física/deslinde, jurisdicción y PROFECO.
+- **Verificación:** `pnpm exec eslint "src/app/terminos-y-condiciones/page.tsx"`
+
+### TASK-FOOTER-LINKS · `src/components/layout/Footer.tsx`
+- `"Privacy" href="#"` → `"Privacidad" href="/aviso-de-privacidad"`.
+- `"Terms" href="#"` → `"Términos" href="/terminos-y-condiciones"`.
+- (Opcional) mismos enlaces en `src/app/soon/page.tsx`.
 - **Verificación:** `pnpm exec tsc --noEmit`
-
-### TASK-LANDING-SCHEDULE-03 · Picker rolling + cupos + CTA `/login`
-- **Archivo:** `src/components/sections/ScheduleClient.tsx`
-- **Cambios:** eliminar `COMING_SOON` y su branch; renderizar tabs desde `days` (con `snap-x`,
-  `min-h-11`); tarjetas con "N lugar(es) disponible(s)" o badge SOLD OUT; CTA `href="/login"`
-  deshabilitado visualmente si SOLD OUT; empty state por día con `min-h-[280px]` (anti layout-shift).
-- **Verificación:** `pnpm exec eslint src/components/sections/ScheduleClient.tsx`
-
-### TASK-LANDING-SCHEDULE-04 · Test de helpers
-- **Archivo (nuevo):** `src/components/sections/__tests__/schedule-helpers.test.ts`
-- **Casos:** rango D0→D6, cruce de mes/año, índices hoy=0/mañana=1/+6=6, 7 labels.
-- **Verificación:** `pnpm exec vitest run "src/components/sections/__tests__/schedule-helpers.test.ts"`
 
 ## Gate final
 ```bash
 pnpm exec tsc --noEmit
-pnpm exec eslint src/components/sections/Schedule.tsx src/components/sections/ScheduleClient.tsx src/components/sections/schedule-utils.ts
+pnpm exec eslint src/components/legal src/app/aviso-de-privacidad src/app/terminos-y-condiciones src/components/layout/Footer.tsx
 pnpm exec vitest run
 ```
