@@ -8,6 +8,9 @@ vi.mock('@/db', () => ({
       userSubscriptions: {
         findFirst: vi.fn(),
       },
+      subscriptions: {
+        findFirst: vi.fn(),
+      },
     },
     select: vi.fn(),
     transaction: vi.fn(),
@@ -40,6 +43,11 @@ vi.mock('@/lib/email/service', () => ({
 import { suspendSubscriptionAction, refundSessionCreditAction } from '../admin';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
+
+type TransactionCallback = (tx: {
+  update: (...args: unknown[]) => unknown;
+  execute: (...args: unknown[]) => unknown;
+}) => Promise<void>;
 
 /**
  * Property 28: Subscription Suspension Cascade
@@ -112,7 +120,7 @@ describe('Property 28: Subscription Suspension Cascade', () => {
           });
 
           // Mock db.transaction to execute the callback
-          (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (cb: Function) => {
+          (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (cb: TransactionCallback) => {
             await cb({
               update: mockTxUpdate,
               execute: mockTxExecute,
@@ -243,5 +251,93 @@ describe('Property 29: Manual Refund With Active Subscription Guard', () => {
       ),
       { numRuns: 50 }
     );
+  });
+});
+
+/**
+ * Suspension credit handling per plan type.
+ *
+ * Open Lab is time-based and has no per-session credits, so suspending it
+ * must NOT increment days_remaining. Credit packages still refund each
+ * cancelled future enrollment.
+ */
+describe('Suspension credits: Open Lab vs credit packages', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function mockSuspendDeps(plan: { guest: boolean }) {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sub: 'admin-uuid',
+      role: 'admin',
+      email: 'admin@test.com',
+    });
+
+    (db.query.userSubscriptions.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'sub-1',
+      userId: 'client-uuid',
+      subscriptionId: 'plan-1',
+      active: true,
+      daysRemaining: 2,
+    });
+
+    (db.query.subscriptions.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'plan-1',
+      guest: plan.guest,
+    });
+
+    const mockWhere = vi
+      .fn()
+      .mockResolvedValue([{ enrollmentId: 'e1' }, { enrollmentId: 'e2' }]);
+    const mockInnerJoin = vi.fn().mockReturnValue({ where: mockWhere });
+    const mockFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
+    (db.select as ReturnType<typeof vi.fn>).mockReturnValue({ from: mockFrom });
+
+    const txOperations: { type: string; data?: unknown }[] = [];
+
+    const mockTxUpdate = vi.fn().mockImplementation(() => ({
+      set: vi.fn().mockImplementation((setData: unknown) => ({
+        where: vi.fn().mockImplementation(() => {
+          txOperations.push({ type: 'update', data: setData });
+          return Promise.resolve();
+        }),
+      })),
+    }));
+
+    const mockTxExecute = vi.fn().mockImplementation(() => {
+      txOperations.push({ type: 'execute' });
+      return Promise.resolve();
+    });
+
+    (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (cb: TransactionCallback) => {
+        await cb({ update: mockTxUpdate, execute: mockTxExecute });
+      }
+    );
+
+    return txOperations;
+  }
+
+  it('does NOT increment days_remaining when suspending Open Lab', async () => {
+    const txOperations = mockSuspendDeps({ guest: true });
+
+    const result = await suspendSubscriptionAction('sub-1');
+
+    expect(result).toHaveProperty('success', true);
+    expect(txOperations.filter((op) => op.type === 'execute')).toHaveLength(0);
+    expect(
+      txOperations.filter(
+        (op) => op.type === 'update' && (op.data as { status?: string }).status === 'cancelled'
+      )
+    ).toHaveLength(2);
+  });
+
+  it('increments days_remaining for each cancelled enrollment in credit packages', async () => {
+    const txOperations = mockSuspendDeps({ guest: false });
+
+    const result = await suspendSubscriptionAction('sub-1');
+
+    expect(result).toHaveProperty('success', true);
+    expect(txOperations.filter((op) => op.type === 'execute')).toHaveLength(2);
   });
 });

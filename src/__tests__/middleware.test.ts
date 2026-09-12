@@ -133,11 +133,11 @@ describe('Property 11: Role-Based Access Control', () => {
     );
   });
 
-  it('authenticated user on auth page or root redirects to their portal dashboard', async () => {
+  it('authenticated user on an auth page redirects to their portal dashboard', async () => {
     await fc.assert(
       fc.asyncProperty(
         roleArb,
-        fc.constantFrom('/', '/login', '/register', '/reset-password'),
+        fc.constantFrom('/login', '/register', '/reset-password'),
         async (userRole, authPath) => {
           const token = await createToken(userRole);
           const req = createRequest(authPath, token);
@@ -152,5 +152,27 @@ describe('Property 11: Role-Based Access Control', () => {
       ),
       { numRuns: 50 }
     );
+  });
+
+  it('authenticated user on the landing page ("/") stays on the landing page', async () => {
+    await fc.assert(
+      fc.asyncProperty(roleArb, async (userRole) => {
+        const token = await createToken(userRole);
+        const req = createRequest('/', token);
+
+        const response = await middleware(req);
+
+        // No redirect: the public landing page must remain accessible when logged in.
+        expect(response.headers.get('location')).toBeNull();
+      }),
+      { numRuns: 50 }
+    );
+  });
+
+  it('unauthenticated user on the landing page ("/") stays on the landing page', async () => {
+    const req = createRequest('/');
+    const response = await middleware(req);
+
+    expect(response.headers.get('location')).toBeNull();
   });
 });

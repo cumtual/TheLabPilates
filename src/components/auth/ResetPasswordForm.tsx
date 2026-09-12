@@ -67,7 +67,7 @@ export function RequestResetForm() {
 
       <div className="flex justify-center font-body text-body-md">
         <Link
-          href="/soon"
+          href="/login"
           className="text-primary underline underline-offset-2 hover:text-secondary transition-colors min-h-11 inline-flex items-center"
         >
           Volver a iniciar sesión
@@ -106,7 +106,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
             {state.message}
           </p>
           <Link
-            href="/soon"
+            href="/login"
             className="font-body text-body-md text-primary underline underline-offset-2 hover:text-secondary transition-colors text-center min-h-11 inline-flex items-center justify-center"
           >
             Ir a iniciar sesión

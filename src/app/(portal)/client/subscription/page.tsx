@@ -72,8 +72,9 @@ export default async function SubscriptionPage({
       }
     }
 
-    // Check suspended subscription (confirmed payment but not active)
-    if (!userSub.active) {
+    // Check suspended subscription (confirmed payment, admin-suspended only).
+    // 'expired' subscriptions must NOT trigger the suspended banner.
+    if (!userSub.active && userSub.status === 'suspended') {
       const confirmedPayment = await db.query.payments.findFirst({
         where: and(
           eq(payments.id, userSub.paymentId),

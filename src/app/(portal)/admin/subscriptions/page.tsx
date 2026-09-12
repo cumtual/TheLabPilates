@@ -39,7 +39,7 @@ export default async function AdminSubscriptionsPage({
     currentFilter !== 'all' ? eq(userSubscriptions.status, currentFilter) : undefined;
 
   const searchCondition =
-    currentSearch !== ''
+    currentSearch.length >= 3
       ? or(
           ilike(users.username, `%${currentSearch}%`),
           ilike(users.email, `%${currentSearch}%`)

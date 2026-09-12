@@ -28,15 +28,18 @@ let findFirstResults: {
   userSubscriptions: Array<unknown>;
   payments: Array<unknown>;
   openClasses: Array<unknown>;
+  subscriptions: Array<unknown>;
 } = {
   userSubscriptions: [],
   payments: [],
   openClasses: [],
+  subscriptions: [],
 };
 let findFirstCallIndex = {
   userSubscriptions: 0,
   payments: 0,
   openClasses: 0,
+  subscriptions: 0,
 };
 
 function createMockTx() {
@@ -72,6 +75,13 @@ function createMockTx() {
           return Promise.resolve(result);
         },
       },
+      subscriptions: {
+        findFirst: (_opts: unknown) => {
+          const result = findFirstResults.subscriptions[findFirstCallIndex.subscriptions];
+          findFirstCallIndex.subscriptions++;
+          return Promise.resolve(result);
+        },
+      },
     },
     update: (_table: unknown) => ({
       set: (setArgs: Record<string, unknown>) => ({
@@ -99,6 +109,7 @@ vi.mock('@/db/schema', () => ({
   openClasses: { id: 'id', status: 'status' },
   userSubscriptions: { id: 'id', active: 'active', status: 'status', daysRemaining: 'daysRemaining', paymentId: 'paymentId' },
   payments: { id: 'id', confirmed: 'confirmed' },
+  subscriptions: { id: 'id', guest: 'guest' },
 }));
 
 // Mock drizzle-orm operators
@@ -204,8 +215,8 @@ const suspendedSubscriptionArb = fc.record({
 function resetMockState() {
   selectFromCallIndex = 0;
   selectFromResults = [];
-  findFirstResults = { userSubscriptions: [], payments: [], openClasses: [] };
-  findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0 };
+  findFirstResults = { userSubscriptions: [], payments: [], openClasses: [], subscriptions: [] };
+  findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0, subscriptions: 0 };
   updateCalls = [];
 }
 

@@ -95,7 +95,7 @@ vi.mock('@/db/schema', () => ({
   },
 }));
 
-import { enrollWithGuestAction, addGuestToReservationAction } from '../guest';
+import { enrollWithGuestAction, addGuestToReservationAction, checkGuestEligibilityAction } from '../guest';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 import { isUserOpenLabEligible } from '@/lib/guest/eligibility';
@@ -119,8 +119,13 @@ const tooShortGuestNameArb = fc.oneof(
   fc.constant('   '),
 );
 
-/** Invalid guest name: too long (> 100 chars) */
-const tooLongGuestNameArb = fc.string({ minLength: 101, maxLength: 200 });
+/** Invalid guest name: too long (non-whitespace so trim() keeps it > 100) */
+const tooLongGuestNameArb = fc
+  .array(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')), {
+    minLength: 101,
+    maxLength: 200,
+  })
+  .map((chars) => chars.join(''));
 
 /** Available capacity less than 2 (0 or 1) */
 const insufficientCapacityArb = fc.integer({ min: 0, max: 1 });
@@ -1625,5 +1630,61 @@ describe('Property 17: Agregar invitado a reserva existente atómicamente', () =
         { numRuns: 100 }
       );
     });
+  });
+});
+
+/**
+ * checkGuestEligibilityAction — Open Lab gating for the guest switch.
+ *
+ * Without an active Open Lab membership the action returns null so the UI
+ * hides the guest toggle entirely (it must not render for other packages).
+ */
+describe('checkGuestEligibilityAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sub: 'user-uuid',
+      role: 'client',
+      email: 'client@test.com',
+    });
+  });
+
+  it('returns null when the user has no active Open Lab membership', async () => {
+    (isUserOpenLabEligible as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      eligible: false,
+      userSubscription: null,
+      subscription: null,
+    });
+
+    const result = await checkGuestEligibilityAction();
+
+    expect(result).toBeNull();
+  });
+
+  it('returns eligible with available credits for an active Open Lab membership', async () => {
+    (isUserOpenLabEligible as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      eligible: true,
+      userSubscription: { id: 'user-sub-uuid' },
+      subscription: { guest: true },
+    });
+    (getGuestCreditsForCycle as ReturnType<typeof vi.fn>).mockResolvedValueOnce(1);
+
+    const result = await checkGuestEligibilityAction();
+
+    expect(result).toEqual({ eligible: true, creditsAvailable: 1 });
+  });
+
+  it('returns eligible=false with the credits reason when the guest credit is exhausted', async () => {
+    (isUserOpenLabEligible as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      eligible: true,
+      userSubscription: { id: 'user-sub-uuid' },
+      subscription: { guest: true },
+    });
+    (getGuestCreditsForCycle as ReturnType<typeof vi.fn>).mockResolvedValueOnce(0);
+
+    const result = await checkGuestEligibilityAction();
+
+    expect(result).toMatchObject({ eligible: false, creditsAvailable: 0 });
+    expect(result?.reason).toContain('crédito');
   });
 });

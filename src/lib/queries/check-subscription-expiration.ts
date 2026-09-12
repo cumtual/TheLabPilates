@@ -1,6 +1,6 @@
 import { eq, and, notInArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { classEnrollments, openClasses, userSubscriptions, payments } from '@/db/schema';
+import { classEnrollments, openClasses, userSubscriptions, payments, subscriptions } from '@/db/schema';
 
 /**
  * Check and expire subscriptions after a class is completed.
@@ -51,8 +51,31 @@ export async function checkAndExpireSubscriptions(classId: string): Promise<void
 
       if (!subscription) continue;
 
-      // Check basic conditions: must be active, daysRemaining = 0
-      if (!subscription.active || (subscription.daysRemaining ?? 0) !== 0) {
+      const plan = await tx.query.subscriptions.findFirst({
+        where: eq(subscriptions.id, subscription.subscriptionId),
+      });
+      const isOpenLab = plan?.guest === true;
+      const isTimeExpired =
+        subscription.expirationDate != null &&
+        new Date(subscription.expirationDate) < new Date();
+
+      // Suspended subscriptions (active = false) must remain untouched.
+      if (!subscription.active) continue;
+
+      // Month ended: any plan (Open Lab or credit-based) expires.
+      if (isTimeExpired) {
+        await tx
+          .update(userSubscriptions)
+          .set({ active: false, status: 'expired', expirationDate: new Date() })
+          .where(eq(userSubscriptions.id, subId));
+        continue;
+      }
+
+      // Open Lab is unlimited and time-bound only — never expired by credit exhaustion.
+      if (isOpenLab) continue;
+
+      // Credit packages require exhausted credits (0) to be considered for expiration.
+      if ((subscription.daysRemaining ?? 0) !== 0) {
         continue;
       }
 
