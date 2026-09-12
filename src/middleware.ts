@@ -27,9 +27,8 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get(SESSION_COOKIE)?.value;
 
-  // Check if user is on auth pages or root
-  const isAuthPage =
-    authPages.some((p) => pathname.startsWith(p)) || pathname === '/';
+  // Auth pages only — the landing page ("/") is public and never redirects.
+  const isAuthPage = authPages.some((p) => pathname.startsWith(p));
   const isProtectedRoute = protectedPrefixes.some((p) =>
     pathname.startsWith(p)
   );

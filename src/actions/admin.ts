@@ -11,6 +11,7 @@ import {
   userSubscriptions,
   users,
   guestEnrollments,
+  guestCredits,
 } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { sendClassCancellationEmail, sendPaymentRejectedEmail } from '@/lib/email/service';
@@ -58,6 +59,19 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
       )
     );
 
+  // Get all pending guest enrollments for this class
+  const pendingGuestEnrollments = await db
+    .select({
+      guestEnrollmentId: guestEnrollments.id,
+    })
+    .from(guestEnrollments)
+    .where(
+      and(
+        eq(guestEnrollments.openClassId, classId),
+        eq(guestEnrollments.status, 'pending')
+      )
+    );
+
   // Atomic: cancel class + refund all pending enrollees + update enrollment statuses
   await db.transaction(async (tx) => {
     // Set class status to 'cancelled' (Req 10.1)
@@ -78,6 +92,19 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
         .update(classEnrollments)
         .set({ status: 'cancelled' })
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
+    }
+
+    // For each pending guest enrollment: cancel it and restore the guest credit.
+    // Deleting the guest_credits row is the restore semantics used by restoreGuestCredit.
+    for (const guest of pendingGuestEnrollments) {
+      await tx
+        .update(guestEnrollments)
+        .set({ status: 'cancelled' })
+        .where(eq(guestEnrollments.id, guest.guestEnrollmentId));
+
+      await tx
+        .delete(guestCredits)
+        .where(eq(guestCredits.guestEnrollmentId, guest.guestEnrollmentId));
     }
   });
 
@@ -263,6 +290,12 @@ export async function suspendSubscriptionAction(
     return { success: false, error: 'La suscripción ya está suspendida.' };
   }
 
+  // Open Lab is time-based and does not use days_remaining credits.
+  const plan = await db.query.subscriptions.findFirst({
+    where: eq(subscriptions.id, userSub.subscriptionId),
+  });
+  const isOpenLab = plan?.guest === true;
+
   // Get future pending enrollments linked to this subscription
   const futureEnrollments = await db
     .select({
@@ -293,11 +326,14 @@ export async function suspendSubscriptionAction(
         .set({ status: 'cancelled' })
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
 
-      await tx.execute(sql`
-        UPDATE user_suscriptions
-        SET days_remaining = days_remaining + 1
-        WHERE id = ${subscriptionId}
-      `);
+      // Open Lab has no per-session credits to restore.
+      if (!isOpenLab) {
+        await tx.execute(sql`
+          UPDATE user_suscriptions
+          SET days_remaining = days_remaining + 1
+          WHERE id = ${subscriptionId}
+        `);
+      }
     }
   });
 
@@ -608,7 +644,7 @@ export async function getSubscriptionEnrollmentsAction(
     .orderBy(desc(openClasses.classDate));
 
   // Fetch guest enrollments registered by this user (for Open Lab users)
-  let guestsByClassId = new Map<string, string>();
+  const guestsByClassId = new Map<string, string>();
   if (userSub) {
     const guestResults = await db
       .select({

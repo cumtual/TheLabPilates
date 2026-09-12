@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import { type GuestEligibilityResult } from '@/lib/types/guest';
 
 export interface GuestToggleProps {
@@ -22,6 +23,8 @@ export function GuestToggle({
   checked,
   onRetry,
 }: GuestToggleProps) {
+  const reactId = useId();
+
   // Hidden: user doesn't have Open Lab membership (eligibility is null and not loading)
   if (!isLoading && eligibility === null) {
     return null;
@@ -63,14 +66,14 @@ export function GuestToggle({
   return (
     <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
       <label
-        htmlFor="guest-toggle"
+        htmlFor={reactId}
         className="relative inline-flex items-center gap-3 cursor-pointer group"
         aria-disabled={isDisabled}
       >
         {/* Toggle switch */}
         <div className="relative">
           <input
-            id="guest-toggle"
+            id={reactId}
             type="checkbox"
             role="switch"
             checked={checked}
@@ -81,7 +84,7 @@ export function GuestToggle({
               }
             }}
             className="sr-only peer"
-            aria-describedby={isDisabled ? 'guest-toggle-tooltip' : undefined}
+            aria-describedby={isDisabled ? `${reactId}-tooltip` : undefined}
           />
           <div
             className={[
@@ -117,7 +120,7 @@ export function GuestToggle({
       {/* Tooltip for disabled state (credits exhausted) */}
       {isDisabled && (
         <p
-          id="guest-toggle-tooltip"
+          id={`${reactId}-tooltip`}
           className="font-body text-[13px] text-outline"
           role="status"
         >

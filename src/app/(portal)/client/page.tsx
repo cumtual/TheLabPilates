@@ -52,16 +52,25 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
     return { type: 'pending' };
   }
 
-  // Suspended subscription (payment confirmed but active=false)
-  if (!userSub.active && payment?.confirmed) {
+  // Admin-suspended subscriptions take precedence (explicit admin action).
+  if (!userSub.active && userSub.status === 'suspended') {
     return { type: 'suspended' };
   }
 
-  // Expired subscription
-  if (userSub.expirationDate && new Date(userSub.expirationDate) < new Date()) {
+  // Expired: explicit status, past expiration, or legacy inactive with confirmed payment.
+  // An expired subscription must NEVER render as suspended.
+  const isPastExpiration =
+    userSub.expirationDate != null && new Date(userSub.expirationDate) < new Date();
+  if (
+    userSub.status === 'expired' ||
+    isPastExpiration ||
+    (!userSub.active && payment?.confirmed)
+  ) {
     return {
       type: 'expired',
-      expirationDate: formatDate(new Date(userSub.expirationDate)),
+      expirationDate: userSub.expirationDate
+        ? formatDate(new Date(userSub.expirationDate))
+        : '--/--/----',
     };
   }
 

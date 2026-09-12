@@ -48,6 +48,19 @@ export async function purchaseSubscriptionAction(
     }
   }
 
+  // A new purchase converts any previously suspended subscription into 'expired'
+  // and voids its remaining credits (admin suspension is superseded by the new plan).
+  // Active/pending/expired subscriptions are left untouched.
+  await db
+    .update(userSubscriptions)
+    .set({ status: 'expired', daysRemaining: 0, expirationDate: new Date() })
+    .where(
+      and(
+        eq(userSubscriptions.userId, session.sub),
+        eq(userSubscriptions.status, 'suspended')
+      )
+    );
+
   // Create payment record with confirmed = false
   const [payment] = await db
     .insert(payments)

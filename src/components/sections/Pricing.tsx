@@ -4,7 +4,7 @@ const packages = [
   {
     name: 'Lab Pass',
     tagline: 'Todo comienza con un primer paso.',
-    sessions: 'SINGLE SESSION',
+    sessions: 'UNA SESIÓN',
     price: '$120',
     features: ['Mat Pilates', 'Barre', 'Yoga'],
     premium: false,
@@ -30,16 +30,19 @@ const packages = [
     tagline: 'Cada movimiento te acerca a tu mejor versión.',
     sessions: '12 SESIONES',
     price: '$1,260',
-    features: ['Flexibilidad de horario'],
+    features: [
+      '-10%OFF Coffee Bar',
+      'Flexibilidad de horario'
+    ],
     premium: false,
   },
   {
     name: '∞ Open Lab',
     tagline: 'Haz del movimiento parte de tu vida.',
-    sessions: 'UNLIMITED ACCESS',
+    sessions: 'ACCESO ILIMITADO',
     price: '$2,850',
     features: [
-      'Flexibilidad total',
+      '-10%OFF Coffee Bar',
       '1 Invitado mensual',
       '1er Kit de regalo',
     ],
@@ -137,7 +140,7 @@ export default function Pricing() {
               </div>
 
               <Link
-                href="/soon"
+                href="login"
                 className={
                   pkg.premium
                     ? 'w-full py-5 bg-plaster-white text-warm-wood text-[12px] font-semibold tracking-widest hover:bg-soft-charcoal hover:text-white transition-all shadow-lg uppercase cursor-pointer text-center block'

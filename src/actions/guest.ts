@@ -28,7 +28,7 @@ import type { ActionResult } from '@/lib/types';
  *
  * On DB/connection errors, returns a descriptive error (req 1.5).
  */
-export async function checkGuestEligibilityAction(): Promise<GuestEligibilityResult> {
+export async function checkGuestEligibilityAction(): Promise<GuestEligibilityResult | null> {
   try {
     // Step 1: Validate session
     const session = await getSession();
@@ -52,11 +52,8 @@ export async function checkGuestEligibilityAction(): Promise<GuestEligibilityRes
     const eligibility = await isUserOpenLabEligible(session.sub);
 
     if (!eligibility.eligible || !eligibility.userSubscription) {
-      return {
-        eligible: false,
-        creditsAvailable: 0,
-        reason: 'No tienes una membresía Open Lab activa.',
-      };
+      // No active Open Lab membership: the guest switch must not render.
+      return null;
     }
 
     // Step 3: Check guest credits for the current billing cycle

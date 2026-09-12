@@ -17,6 +17,11 @@ vi.mock('@/db', () => ({
         returning: vi.fn(),
       })),
     })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(),
+      })),
+    })),
   },
 }));
 
@@ -203,5 +208,77 @@ describe('Property 14: Pending Payment Blocks New Purchase', () => {
       ),
       { numRuns: 50 }
     );
+  });
+});
+
+/**
+ * Suspended subscription transition on a new purchase.
+ *
+ * When a client purchases a new package while holding an admin-suspended
+ * subscription, the previous one SHALL become 'expired' and lose its
+ * remaining credits (never remain 'suspended').
+ */
+describe('Suspension → Expired on new purchase', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('expires a previously suspended subscription and resets its credits', async () => {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sub: 'user-uuid-123',
+      role: 'client',
+      email: 'client@test.com',
+    });
+
+    // Existing suspended subscription for this user
+    (db.query.userSubscriptions.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: 'suspended-sub-uuid',
+        paymentId: 'suspended-payment-uuid',
+        subscriptionId: 'old-plan-uuid',
+        userId: 'user-uuid-123',
+        active: false,
+        status: 'suspended',
+        daysRemaining: 3,
+        expirationDate: null,
+      },
+    ]);
+
+    // No *unconfirmed* payment exists (real query filters confirmed = false)
+    (db.query.payments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+
+    // Capture the update(...).set(...).where(...) chain
+    const setArgs: unknown[] = [];
+    const whereArgs: unknown[] = [];
+    (db.update as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      set: (args: unknown) => {
+        setArgs.push(args);
+        return {
+          where: (w: unknown) => {
+            whereArgs.push(w);
+          },
+        };
+      },
+    }));
+
+    // Insert chain: 1st = payment (returning), 2nd = user_subscription
+    let insertCallCount = 0;
+    const mockReturning = vi.fn().mockResolvedValue([{ id: 'new-payment-uuid' }]);
+    (db.insert as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      insertCallCount++;
+      if (insertCallCount === 1) {
+        return { values: vi.fn(() => ({ returning: mockReturning })) };
+      }
+      return { values: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([]) })) };
+    });
+
+    const result = await purchaseSubscriptionAction('new-plan-uuid', 'transfer');
+
+    expect(result).toHaveProperty('success', true);
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(setArgs[0]).toEqual(
+      expect.objectContaining({ status: 'expired', daysRemaining: 0 })
+    );
+    expect(whereArgs).toHaveLength(1);
   });
 });

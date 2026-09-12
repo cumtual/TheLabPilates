@@ -201,4 +201,45 @@ describe('GuestToggle', () => {
       expect(wrapper?.className).toContain('md:flex-row');
     });
   });
+
+  describe('Multiple instances', () => {
+    const eligibleResult: GuestEligibilityResult = {
+      eligible: true,
+      creditsAvailable: 1,
+    };
+
+    it('renders unique ids and toggles independently per instance', () => {
+      const firstToggle = vi.fn();
+      const secondToggle = vi.fn();
+
+      const { container } = render(
+        <>
+          <GuestToggle
+            eligibility={eligibleResult}
+            isLoading={false}
+            onToggle={firstToggle}
+            checked={false}
+          />
+          <GuestToggle
+            eligibility={eligibleResult}
+            isLoading={false}
+            onToggle={secondToggle}
+            checked={false}
+          />
+        </>
+      );
+
+      const switches = container.querySelectorAll<HTMLInputElement>(
+        'input[role="switch"]'
+      );
+      expect(switches).toHaveLength(2);
+      expect(switches[0].id).not.toBe('');
+      expect(switches[0].id).not.toBe(switches[1].id);
+
+      fireEvent.click(switches[1]);
+
+      expect(secondToggle).toHaveBeenCalledWith(true);
+      expect(firstToggle).not.toHaveBeenCalled();
+    });
+  });
 });
