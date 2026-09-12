@@ -26,7 +26,7 @@ export default function Location() {
                   CENTRO
                 </h4>
                 <p className="text-on-surface-variant">
-                  Calle Prol. de Micaela Galindo 24
+                  Matamoros & Calle Prolongación de Micaela Galindo, Centro
                   <br />
                   Huajuapan de León, Oaxaca.
                 </p>

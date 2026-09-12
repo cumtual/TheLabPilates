@@ -22,7 +22,7 @@ export default function Home() {
     email: "info@thelabpilatesstudio.com.mx",
     address: {
       "@type": "PostalAddress",
-      streetAddress: "Calle Prol. de Micaela Galindo 24, centro",
+      streetAddress: "Matamoros & Calle Prolongación de Micaela Galindo, centro",
       addressLocality: "Huajuapan de León",
       addressRegion: "Oaxaca",
       addressCountry: "MX",
