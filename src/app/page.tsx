@@ -10,6 +10,10 @@ import Schedule from "@/components/sections/Schedule";
 import Location from "@/components/sections/Location";
 import Footer from "@/components/layout/Footer";
 
+// ISR: regenerate the landing (and its schedule query) at most every 5 minutes.
+// On-demand revalidation is also triggered by class/enrollment mutations.
+export const revalidate = 300;
+
 export default function Home() {
   const jsonLd = {
     "@context": "https://schema.org",

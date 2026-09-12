@@ -306,6 +306,7 @@ export async function enrollWithGuestAction(
   revalidatePath('/client/classes');
   revalidatePath('/client/reservations');
   revalidatePath('/client/subscription');
+  revalidatePath('/');
   return { success: true, message: '¡Reservación con invitado confirmada!' };
 }
 
@@ -517,6 +518,7 @@ export async function addGuestToReservationAction(
     revalidatePath('/client');
     revalidatePath('/client/reservations');
     revalidatePath('/client/classes');
+    revalidatePath('/');
 
     return { success: true, message: '¡Invitado agregado exitosamente!' };
   } catch (error) {
@@ -636,6 +638,7 @@ export async function cancelGuestAction(
 
     revalidatePath('/client');
     revalidatePath('/client/reservations');
+    revalidatePath('/');
     return { success: true, message: 'Invitado cancelado. Tu crédito de invitado ha sido restaurado.' };
   } else {
     // Late cancellation: return signal for UI to show confirmation dialog
@@ -697,6 +700,7 @@ export async function confirmLateCancelGuestAction(
 
   revalidatePath('/client');
   revalidatePath('/client/reservations');
+  revalidatePath('/');
   return {
     success: true,
     message: 'Invitado cancelado. El crédito de invitado no será reembolsado por cancelación tardía.',
@@ -808,6 +812,7 @@ export async function cancelReservationWithGuestAction(
     revalidatePath('/client');
     revalidatePath('/client/reservations');
     revalidatePath('/client/subscription');
+    revalidatePath('/');
     return {
       success: true,
       message: 'Reservación y invitado cancelados. Tu crédito de invitado ha sido restaurado.',
@@ -891,6 +896,7 @@ export async function confirmLateCancelBothAction(
 
   revalidatePath('/client');
   revalidatePath('/client/reservations');
+  revalidatePath('/');
   return {
     success: true,
     message: 'Cancelación registrada. No se restaurará el crédito por cancelación tardía.',

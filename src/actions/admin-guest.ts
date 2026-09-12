@@ -120,6 +120,7 @@ export async function adminAddGuestAction(
   revalidatePath('/admin/classes');
   revalidatePath(`/admin/classes/${classId}`);
   revalidatePath(`/admin/attendance/${classId}`);
+  revalidatePath('/');
   return { success: true, message: '¡Invitado agregado exitosamente!' };
 }
 
@@ -197,5 +198,6 @@ export async function adminRemoveGuestAction(
   revalidatePath('/admin/classes');
   revalidatePath(`/admin/classes/${guestEnrollment.openClassId}`);
   revalidatePath(`/admin/attendance/${guestEnrollment.openClassId}`);
+  revalidatePath('/');
   return { success: true, message: 'Invitado eliminado exitosamente.' };
 }
