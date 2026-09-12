@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { openClasses, classEnrollments, users } from '@/db/schema';
+import { openClasses, classEnrollments, guestEnrollments, users } from '@/db/schema';
 import { eq, count, and, gt, notInArray } from 'drizzle-orm';
 import { ClassList, type ClassItem } from '@/components/client/ClassList';
 import { Pagination } from '@/components/ui/Pagination';
@@ -54,8 +54,22 @@ export default async function ClientClassesPage({
       .groupBy(openClasses.id, users.username)
       .orderBy(openClasses.classDate);
 
-    // Filter out full classes
-    const available = allClasses.filter((c) => c.enrolledCount < (c.capacity ?? 0));
+    // Count active guest enrollments per class (exclude cancelled / late_cancelled)
+    const guestCounts = await db
+      .select({
+        classId: guestEnrollments.openClassId,
+        cnt: count(guestEnrollments.id),
+      })
+      .from(guestEnrollments)
+      .where(notInArray(guestEnrollments.status, ['cancelled', 'late_cancelled']))
+      .groupBy(guestEnrollments.openClassId);
+
+    const guestCountMap = new Map(guestCounts.map((g) => [g.classId, g.cnt]));
+
+    // Filter out full classes (titulares + invitados)
+    const available = allClasses.filter(
+      (c) => c.enrolledCount + (guestCountMap.get(c.id) ?? 0) < (c.capacity ?? 0)
+    );
     const total = available.length;
     totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -68,7 +82,7 @@ export default async function ClientClassesPage({
       classType: c.classType,
       customName: c.customName,
       capacity: c.capacity,
-      enrolledCount: c.enrolledCount,
+      enrolledCount: c.enrolledCount + (guestCountMap.get(c.id) ?? 0),
       coachName: c.coachName,
     }));
   } catch {

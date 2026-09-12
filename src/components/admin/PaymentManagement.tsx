@@ -166,7 +166,7 @@ export function PaymentManagement({ payments }: PaymentManagementProps) {
       <div>
         <p className="font-body text-xs text-outline uppercase tracking-wider mb-2">Tipo de pago</p>
         <div className="flex flex-wrap gap-2">
-          {(Object.keys(typeLabels) as TypeFilter[]).filter((k) => k === 'all' || typeCounts[k] > 0).map((key) => (
+          {(Object.keys(typeLabels) as TypeFilter[]).map((key) => (
             <button
               key={key}
               type="button"

@@ -53,9 +53,11 @@ export default async function ClientReservationsPage() {
       .where(eq(userSubscriptions.userId, session.sub))
       .orderBy(desc(openClasses.classDate));
 
-    // Check guest eligibility for the user (once, applies to all reservations)
+    // Check guest eligibility for the user (once, applies to all reservations).
+    // null means the user has no active Open Lab membership.
     const eligibility = await checkGuestEligibilityAction();
-    guestEligible = eligibility.eligible && eligibility.creditsAvailable > 0;
+    guestEligible =
+      eligibility !== null && eligibility.eligible && eligibility.creditsAvailable > 0;
 
     // Fetch active guest enrollments for the user's classes
     const userGuestEnrollments = await db
@@ -118,7 +120,7 @@ export default async function ClientReservationsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 py-2">
       <h1 className="font-headline text-headline-lg-mobile text-on-surface">Mis Reservaciones</h1>
 
       {error ? (

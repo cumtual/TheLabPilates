@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useTransition, useCallback } from 'react';
+import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
@@ -79,12 +79,28 @@ export function SubscriptionManagement({
 
   // Search state with debounce
   const [searchInput, setSearchInput] = useState(currentSearch);
+  const [lastSearch, setLastSearch] = useState(currentSearch);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync searchInput when currentSearch prop changes (e.g., browser back/forward)
-  useEffect(() => {
+  // Sync searchInput when currentSearch prop changes (e.g., browser back/forward).
+  // Guarded render-time adjustment (no effect), per React docs.
+  if (currentSearch !== lastSearch) {
+    setLastSearch(currentSearch);
     setSearchInput(currentSearch);
-  }, [currentSearch]);
+  }
+
+  function navigateWithParams(updates: Record<string, string | undefined>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === undefined || value === '') {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    }
+    const query = params.toString();
+    router.push(query ? `?${query}` : '?');
+  }
 
   // Debounce search input → push to URL
   useEffect(() => {
@@ -96,8 +112,24 @@ export function SubscriptionManagement({
     if (searchInput === currentSearch) return;
 
     debounceTimerRef.current = setTimeout(() => {
+      const trimmed = searchInput.trim();
+
+      // Empty input → restore the full list (clear the URL param).
+      if (trimmed.length === 0) {
+        navigateWithParams({
+          search: undefined,
+          page: undefined,
+        });
+        return;
+      }
+
+      // Below the minimum threshold: pause filtering and keep current results.
+      if (trimmed.length < 3) {
+        return;
+      }
+
       navigateWithParams({
-        search: searchInput || undefined,
+        search: trimmed,
         page: undefined, // Reset to page 1 on search change
       });
     }, 300);
@@ -113,24 +145,8 @@ export function SubscriptionManagement({
   function getEffectiveStatus(sub: SubscriptionItem): 'pending' | 'active' | 'suspended' | 'expired' {
     const localOverride = localStatusState[sub.subscriptionId];
     if (localOverride) return localOverride;
-    return sub.status ?? (sub.active ? 'active' : 'suspended');
+    return sub.status ?? (sub.active ? 'active' : 'expired');
   }
-
-  const navigateWithParams = useCallback(
-    (updates: Record<string, string | undefined>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      for (const [key, value] of Object.entries(updates)) {
-        if (value === undefined || value === '') {
-          params.delete(key);
-        } else {
-          params.set(key, value);
-        }
-      }
-      const query = params.toString();
-      router.push(query ? `?${query}` : '?');
-    },
-    [router, searchParams]
-  );
 
   function handleFilterChange(newFilter: StatusFilter) {
     navigateWithParams({

@@ -48,6 +48,12 @@ import { cancelClassAction } from '../admin';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 
+type TransactionCallback = (tx: {
+  update: (...args: unknown[]) => unknown;
+  execute: (...args: unknown[]) => unknown;
+  delete: (...args: unknown[]) => unknown;
+}) => Promise<void>;
+
 /**
  * Property 26: Class Cancellation Refunds All Pending Enrollments
  *
@@ -95,15 +101,19 @@ describe('Property 26: Class Cancellation Refunds All Pending Enrollments', () =
             capacity: 10,
           });
 
-          // Mock db.select for pending enrollments
+          // Mock db.select for pending enrollments (1st call) and guests (2nd call)
           const mockWhere = vi.fn().mockResolvedValue(
             pendingEnrollments.map((e) => ({
               enrollmentId: e.enrollmentId,
               userSubscriptionId: e.userSubscriptionId,
             }))
           );
+          const mockGuestWhere = vi.fn().mockResolvedValue([]);
           const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
-          (db.select as ReturnType<typeof vi.fn>).mockReturnValue({ from: mockFrom });
+          const mockGuestFrom = vi.fn().mockReturnValue({ where: mockGuestWhere });
+          (db.select as ReturnType<typeof vi.fn>)
+            .mockReturnValueOnce({ from: mockFrom })
+            .mockReturnValueOnce({ from: mockGuestFrom });
 
           // Track transaction operations
           const txOperations: { type: string; data: unknown; target?: string }[] = [];
@@ -122,11 +132,19 @@ describe('Property 26: Class Cancellation Refunds All Pending Enrollments', () =
             return Promise.resolve();
           });
 
+          const mockTxDelete = vi.fn().mockImplementation(() => ({
+            where: vi.fn().mockImplementation(() => {
+              txOperations.push({ type: 'delete', data: null });
+              return Promise.resolve();
+            }),
+          }));
+
           // Mock db.transaction to execute the callback
-          (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (cb: Function) => {
+          (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (cb: TransactionCallback) => {
             await cb({
               update: mockTxUpdate,
               execute: mockTxExecute,
+              delete: mockTxDelete,
             });
           });
 
@@ -234,5 +252,87 @@ describe('Property 27: Already-Cancelled Class Blocks Re-Cancellation', () => {
       ),
       { numRuns: 50 }
     );
+  });
+});
+
+/**
+ * Guest refund on class cancellation.
+ *
+ * When an admin cancels a scheduled class that has pending guest enrollments,
+ * each guest enrollment SHALL be set to 'cancelled' and its guest credit SHALL
+ * be restored (the guest_credits row is deleted) inside the same transaction.
+ */
+describe('Guest Refund on Class Cancellation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('cancels pending guest enrollments and restores their guest credits', async () => {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sub: 'admin-uuid',
+      role: 'admin',
+      email: 'admin@test.com',
+    });
+
+    (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'class-uuid',
+      status: 'scheduled',
+      classType: 'yoga',
+      classDate: new Date('2025-12-01T10:00:00Z'),
+      coachUserId: null,
+      capacity: 10,
+    });
+
+    // 1st db.select = titular enrollments (none), 2nd = guest enrollments (one)
+    const titularWhere = vi.fn().mockResolvedValue([]);
+    const guestWhere = vi
+      .fn()
+      .mockResolvedValue([{ guestEnrollmentId: 'guest-enroll-uuid' }]);
+    (db.select as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: titularWhere }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: guestWhere }) });
+
+    const txOperations: { type: string; data: unknown }[] = [];
+
+    const mockTxUpdate = vi.fn().mockImplementation(() => ({
+      set: vi.fn().mockImplementation((setData: unknown) => ({
+        where: vi.fn().mockImplementation(() => {
+          txOperations.push({ type: 'update', data: setData });
+          return Promise.resolve();
+        }),
+      })),
+    }));
+
+    const mockTxExecute = vi.fn().mockResolvedValue(undefined);
+
+    const mockTxDelete = vi.fn().mockImplementation(() => ({
+      where: vi.fn().mockImplementation(() => {
+        txOperations.push({ type: 'delete', data: null });
+        return Promise.resolve();
+      }),
+    }));
+
+    (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (cb: TransactionCallback) => {
+        await cb({
+          update: mockTxUpdate,
+          execute: mockTxExecute,
+          delete: mockTxDelete,
+        });
+      }
+    );
+
+    const result = await cancelClassAction('class-uuid');
+
+    expect(result).toHaveProperty('success', true);
+
+    // First update cancels the class, second cancels the guest enrollment
+    const updates = txOperations.filter((op) => op.type === 'update');
+    expect(updates[0].data).toMatchObject({ status: 'cancelled' });
+    expect(updates[1].data).toMatchObject({ status: 'cancelled' });
+
+    // Guest credit restored via delete
+    expect(mockTxDelete).toHaveBeenCalledTimes(1);
+    expect(txOperations.filter((op) => op.type === 'delete')).toHaveLength(1);
   });
 });

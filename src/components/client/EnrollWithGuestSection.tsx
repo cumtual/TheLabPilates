@@ -43,11 +43,16 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
   const [guestName, setGuestName] = useState('');
   const [guestNameError, setGuestNameError] = useState<string | undefined>(undefined);
 
-  // Fetch eligibility on mount
+  // Fetch eligibility on mount (eligibilityLoading starts true, so no sync setState here)
   const fetchEligibility = useCallback(async () => {
-    setEligibilityLoading(true);
     try {
       const result = await checkGuestEligibilityAction();
+      // No Open Lab membership → clear any guest state so no guest payload is sent.
+      if (result === null) {
+        setGuestToggled(false);
+        setGuestName('');
+        setGuestNameError(undefined);
+      }
       setEligibility(result);
     } catch {
       // On error, set eligibility to null (toggle will be hidden)
@@ -57,8 +62,16 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
     }
   }, []);
 
-  useEffect(() => {
+  const handleRetryEligibility = useCallback(() => {
+    setEligibilityLoading(true);
     fetchEligibility();
+  }, [fetchEligibility]);
+
+  useEffect(() => {
+    // Defer to a macrotask so setState is not called synchronously in the effect body
+    // (react-hooks/set-state-in-effect). The fetch is async and only sets state after await.
+    const timer = setTimeout(fetchEligibility, 0);
+    return () => clearTimeout(timer);
   }, [fetchEligibility]);
 
   // Handle toggle change (req 3.8: when toggled off, clear name and errors)
@@ -139,7 +152,7 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
           isLoading={eligibilityLoading}
           onToggle={handleToggle}
           checked={guestToggled}
-          onRetry={fetchEligibility}
+          onRetry={handleRetryEligibility}
         />
         <GuestNameInput
           value={guestName}

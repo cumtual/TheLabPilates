@@ -26,7 +26,7 @@ export default async function VerifyEmailPage({
             Este enlace de verificación no es válido o ya fue utilizado.
           </p>
           <Link
-            href="/soon"
+            href="/login"
             className="inline-flex items-center justify-center px-6 py-3 min-h-11 font-body text-sm font-semibold uppercase tracking-wider bg-soft-charcoal text-on-primary rounded-DEFAULT transition-all hover:-translate-y-0.5 hover:shadow-lg"
           >
             Ir a iniciar sesión
@@ -46,7 +46,7 @@ export default async function VerifyEmailPage({
             Tu correo electrónico ya fue verificado anteriormente. Puedes iniciar sesión.
           </p>
           <Link
-            href="/soon"
+            href="/login"
             className="inline-flex items-center justify-center px-6 py-3 min-h-11 font-body text-sm font-semibold uppercase tracking-wider bg-soft-charcoal text-on-primary rounded-DEFAULT transition-all hover:-translate-y-0.5 hover:shadow-lg"
           >
             Iniciar sesión
@@ -71,7 +71,7 @@ export default async function VerifyEmailPage({
           Tu correo electrónico ha sido verificado exitosamente. Ya puedes acceder a tu cuenta.
         </p>
         <Link
-          href="/soon"
+          href="/login"
           className="inline-flex items-center justify-center px-6 py-3 min-h-11 font-body text-sm font-semibold uppercase tracking-wider bg-soft-charcoal text-on-primary rounded-DEFAULT transition-all hover:-translate-y-0.5 hover:shadow-lg"
         >
           Iniciar sesión

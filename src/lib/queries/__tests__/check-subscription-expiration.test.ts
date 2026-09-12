@@ -36,15 +36,18 @@ let findFirstResults: {
   userSubscriptions: Array<unknown>;
   payments: Array<unknown>;
   openClasses: Array<unknown>;
+  subscriptions: Array<unknown>;
 } = {
   userSubscriptions: [],
   payments: [],
   openClasses: [],
+  subscriptions: [],
 };
 let findFirstCallIndex = {
   userSubscriptions: 0,
   payments: 0,
   openClasses: 0,
+  subscriptions: 0,
 };
 
 function createMockTx() {
@@ -80,6 +83,13 @@ function createMockTx() {
           return Promise.resolve(result);
         },
       },
+      subscriptions: {
+        findFirst: (_opts: unknown) => {
+          const result = findFirstResults.subscriptions[findFirstCallIndex.subscriptions];
+          findFirstCallIndex.subscriptions++;
+          return Promise.resolve(result);
+        },
+      },
     },
     update: (_table: unknown) => ({
       set: (setArgs: Record<string, unknown>) => ({
@@ -107,6 +117,7 @@ vi.mock('@/db/schema', () => ({
   openClasses: { id: 'id', status: 'status' },
   userSubscriptions: { id: 'id', active: 'active', status: 'status', daysRemaining: 'daysRemaining', paymentId: 'paymentId' },
   payments: { id: 'id', confirmed: 'confirmed' },
+  subscriptions: { id: 'id', guest: 'guest' },
 }));
 
 // Mock drizzle-orm operators
@@ -161,7 +172,7 @@ function setupMocksForBugCondition(scenario: {
 }) {
   // Reset state
   selectFromCallIndex = 0;
-  findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0 };
+  findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0, subscriptions: 0 };
   updateCalls = [];
 
   // Step 1 result: tx.select({userSubscriptionId}).from(classEnrollments).where(...)
@@ -214,8 +225,8 @@ describe('Property 1: Bug Condition - Suscripciones agotadas se marcan como venc
     vi.clearAllMocks();
     selectFromCallIndex = 0;
     selectFromResults = [];
-    findFirstResults = { userSubscriptions: [], payments: [], openClasses: [] };
-    findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0 };
+    findFirstResults = { userSubscriptions: [], payments: [], openClasses: [], subscriptions: [] };
+    findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0, subscriptions: 0 };
     updateCalls = [];
   });
 
@@ -314,5 +325,115 @@ describe('Property 1: Bug Condition - Suscripciones agotadas se marcan como venc
       (call) => call.setArgs.active === false && call.setArgs.status === 'expired'
     );
     expect(expireCall).toBeDefined();
+  });
+});
+
+/**
+ * Open Lab / time-based expiration rules.
+ *
+ * - Open Lab (guest = true) is time-bound only: never expired by exhausted credits.
+ * - Any plan expires when its expiration_date has passed (month ended).
+ * - Admin-suspended subscriptions (active = false) remain untouched.
+ */
+describe('Open Lab and time-based expiration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    selectFromCallIndex = 0;
+    selectFromResults = [];
+    findFirstResults = { userSubscriptions: [], payments: [], openClasses: [], subscriptions: [] };
+    findFirstCallIndex = { userSubscriptions: 0, payments: 0, openClasses: 0, subscriptions: 0 };
+    updateCalls = [];
+  });
+
+  it('Open Lab with daysRemaining=0 within its month is NOT expired', async () => {
+    selectFromResults = [[{ userSubscriptionId: 'sub-ol' }]];
+    findFirstResults.userSubscriptions = [
+      {
+        id: 'sub-ol',
+        userId: 'user-ol',
+        paymentId: 'pay-ol',
+        subscriptionId: 'plan-ol',
+        active: true,
+        daysRemaining: 0,
+        status: 'active',
+        expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    ];
+    findFirstResults.subscriptions = [{ id: 'plan-ol', guest: true }];
+    findFirstResults.payments = [{ id: 'pay-ol', confirmed: true }];
+    findFirstResults.openClasses = [{ id: 'class-ol', status: 'completed' }];
+
+    await checkAndExpireSubscriptions('class-ol');
+
+    expect(updateCalls.length).toBe(0);
+  });
+
+  it('Open Lab whose month ended IS expired', async () => {
+    selectFromResults = [[{ userSubscriptionId: 'sub-ol-2' }]];
+    findFirstResults.userSubscriptions = [
+      {
+        id: 'sub-ol-2',
+        userId: 'user-ol',
+        paymentId: 'pay-ol-2',
+        subscriptionId: 'plan-ol',
+        active: true,
+        daysRemaining: 12,
+        status: 'active',
+        expirationDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    ];
+    findFirstResults.subscriptions = [{ id: 'plan-ol', guest: true }];
+
+    await checkAndExpireSubscriptions('class-ol-2');
+
+    const expireCall = updateCalls.find(
+      (call) => call.setArgs.active === false && call.setArgs.status === 'expired'
+    );
+    expect(expireCall).toBeDefined();
+  });
+
+  it('credit package with remaining credits but expired month IS expired', async () => {
+    selectFromResults = [[{ userSubscriptionId: 'sub-cr' }]];
+    findFirstResults.userSubscriptions = [
+      {
+        id: 'sub-cr',
+        userId: 'user-cr',
+        paymentId: 'pay-cr',
+        subscriptionId: 'plan-cr',
+        active: true,
+        daysRemaining: 5,
+        status: 'active',
+        expirationDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    ];
+    findFirstResults.subscriptions = [{ id: 'plan-cr', guest: false }];
+
+    await checkAndExpireSubscriptions('class-cr');
+
+    const expireCall = updateCalls.find(
+      (call) => call.setArgs.active === false && call.setArgs.status === 'expired'
+    );
+    expect(expireCall).toBeDefined();
+  });
+
+  it('admin-suspended subscription is NOT reclassified as expired even if the month ended', async () => {
+    selectFromResults = [[{ userSubscriptionId: 'sub-susp' }]];
+    findFirstResults.userSubscriptions = [
+      {
+        id: 'sub-susp',
+        userId: 'user-susp',
+        paymentId: 'pay-susp',
+        subscriptionId: 'plan-cr',
+        active: false,
+        daysRemaining: 0,
+        status: 'suspended',
+        expirationDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    ];
+    findFirstResults.subscriptions = [{ id: 'plan-cr', guest: false }];
+
+    await checkAndExpireSubscriptions('class-susp');
+
+    expect(updateCalls.length).toBe(0);
   });
 });

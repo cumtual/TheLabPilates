@@ -58,7 +58,7 @@ export default function Navbar() {
           </a>
         </nav>
 
-        <Link href="/soon" className="bg-soft-charcoal text-plaster-white px-6 py-3 font-body text-label-caps font-semibold uppercase tracking-[0.1em] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm hover:shadow-md cursor-pointer">
+        <Link href="/login" className="bg-soft-charcoal text-plaster-white px-6 py-3 font-body text-label-caps font-semibold uppercase tracking-[0.1em] hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm hover:shadow-md cursor-pointer">
           ACCESO
         </Link>
       </div>
