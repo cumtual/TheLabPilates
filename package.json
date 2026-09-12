@@ -1,6 +1,6 @@
 {
   "name": "the-lab-pilates-frontend",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "private": true,
   "packageManager": "pnpm@11.20.0",
   "scripts": {
