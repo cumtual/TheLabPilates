@@ -132,6 +132,7 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
   revalidatePath('/client/classes');
   revalidatePath('/client/reservations');
   revalidatePath('/client/subscription');
+  revalidatePath('/');
   return { success: true, message: '¡Reservación confirmada!' };
 }
 
@@ -231,6 +232,7 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
 
     revalidatePath('/client/reservations');
     revalidatePath('/client');
+    revalidatePath('/');
     return { success: true, message: 'Reservación cancelada. Tu crédito ha sido restaurado.' };
   } else {
     // Late cancellation: signal to client that confirmation is needed
@@ -291,5 +293,6 @@ export async function confirmLateCancellationAction(enrollmentId: string): Promi
 
   revalidatePath('/client/reservations');
   revalidatePath('/client');
+  revalidatePath('/');
   return { success: true, message: 'Cancelación registrada. No se restaurará el crédito por cancelación tardía.' };
 }

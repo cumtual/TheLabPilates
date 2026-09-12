@@ -1,6 +1,7 @@
 'use server';
 
 import { eq } from 'drizzle-orm';
+import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { openClasses, classEnrollments, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
@@ -119,6 +120,8 @@ export async function completeClassAction(
   // Check and expire subscriptions linked to this completed class
   await checkAndExpireSubscriptions(classId);
 
+  revalidatePath('/coach/classes');
+  revalidatePath('/');
   return { success: true, message: 'Clase completada exitosamente.' };
 }
 
@@ -178,5 +181,7 @@ export async function createClassAction(
     available: 'available',
   });
 
+  revalidatePath('/coach/classes');
+  revalidatePath('/');
   return { success: true, message: '¡Clase creada exitosamente!' };
 }
