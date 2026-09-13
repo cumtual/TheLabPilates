@@ -5,7 +5,7 @@ const packages = [
     name: 'Lab Pass',
     tagline: 'Todo comienza con un primer paso.',
     sessions: 'UNA SESIÓN',
-    price: '$120',
+    price: '120',
     features: ['Mat Pilates', 'Barre', 'Yoga'],
     premium: false,
   },
@@ -13,7 +13,7 @@ const packages = [
     name: 'Lab Entry',
     tagline: 'Empieza a descubrir de lo que eres capaz.',
     sessions: '4 SESIONES',
-    price: '$460',
+    price: '460',
     features: ['Flexibilidad de horario'],
     premium: false,
   },
@@ -21,7 +21,7 @@ const packages = [
     name: 'Lab Practice',
     tagline: 'La constancia construye resultados.',
     sessions: '8 SESIONES',
-    price: '$880',
+    price: '880',
     features: ['Flexibilidad de horario'],
     premium: false,
   },
@@ -29,7 +29,7 @@ const packages = [
     name: 'Lab Progress',
     tagline: 'Cada movimiento te acerca a tu mejor versión.',
     sessions: '12 SESIONES',
-    price: '$1,260',
+    price: '1,260',
     features: [
       '-10%OFF Coffee Bar',
       'Flexibilidad de horario'
@@ -40,7 +40,7 @@ const packages = [
     name: '∞ Open Lab',
     tagline: 'Haz del movimiento parte de tu vida.',
     sessions: 'ACCESO ILIMITADO',
-    price: '$2,850',
+    price: '2,850',
     features: [
       '-10%OFF Coffee Bar',
       '1 Invitado mensual',
@@ -107,6 +107,7 @@ export default function Pricing() {
                       {pkg.sessions}
                     </p>
                     <p className="font-headline text-[40px] text-plaster-white">
+                      <span className="font-body">$</span>
                       {pkg.price}
                     </p>
                   </div>
@@ -115,7 +116,10 @@ export default function Pricing() {
                     <p className="text-[11px] font-semibold text-primary tracking-widest mb-6">
                       {pkg.sessions}
                     </p>
-                    <p className="font-headline text-[40px] mb-8">{pkg.price}</p>
+                    <p className="font-headline text-[40px] mb-8">
+                      <span className="font-body">$</span>
+                      {pkg.price}
+                    </p>
                   </>
                 )}
 
