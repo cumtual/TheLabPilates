@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/cumtual/TheLabPilates/compare/v1.9.0...v1.10.0) (2026-09-13)
+
+
+### Features
+
+* **pricing:** update pricing format by removing dollar signs and add… ([b66c5c1](https://github.com/cumtual/TheLabPilates/commit/b66c5c1c80df7fbffb786ab2be1c12436ddba93d))
+* **pricing:** update pricing format by removing dollar signs and adding them in display ([8541b06](https://github.com/cumtual/TheLabPilates/commit/8541b0639b00a0beb2d3f3bc50ca5af2a6ec2570))
+
 ## [1.9.0](https://github.com/cumtual/TheLabPilates/compare/v1.8.0...v1.9.0) (2026-09-13)
 
 
