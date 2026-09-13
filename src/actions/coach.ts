@@ -8,6 +8,7 @@ import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
 import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
 import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-expiration';
+import { getTotalOccupied } from '@/lib/guest/capacity';
 
 interface AttendanceRecord {
   enrollmentId: string;
@@ -123,6 +124,122 @@ export async function completeClassAction(
   revalidatePath('/coach/classes');
   revalidatePath('/');
   return { success: true, message: 'Clase completada exitosamente.' };
+}
+
+export interface UpdateClassScheduleInput {
+  classDate?: string;
+  capacity?: string | number;
+}
+
+/**
+ * Edita ÚNICAMENTE la fecha/hora y los cupos de una clase programada.
+ *
+ * - Admin: puede editar cualquier clase de cualquier coach.
+ * - Coach: solo clases propias (`coachUserId === session.sub`); en caso contrario se
+ *   rechaza (equivalente a 403 Forbidden dentro del contrato ActionResult).
+ * - Coach NO puede cancelar: cualquier campo distinto de `classDate`/`capacity`
+ *   (p. ej. `status`) hace que la operación sea rechazada.
+ * - La nueva capacidad no puede ser menor a los cupos actualmente ocupados.
+ */
+export async function updateClassScheduleAction(
+  classId: string,
+  input: UpdateClassScheduleInput
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: 'No autenticado.' };
+  }
+  if (session.role !== 'coach' && session.role !== 'admin') {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  if (!classId) {
+    return { success: false, error: 'ID de clase no proporcionado.' };
+  }
+
+  if (!input || typeof input !== 'object') {
+    return { success: false, error: 'Datos de edición no proporcionados.' };
+  }
+
+  // Allow-list estricta: solo claseDate y capacity son mutables.
+  // Bloquea explícitamente cualquier intento de mutar `status` (cancelación).
+  const allowedKeys = ['classDate', 'capacity'];
+  const providedKeys = Object.keys(input);
+  if (providedKeys.some((key) => !allowedKeys.includes(key))) {
+    return {
+      success: false,
+      error: 'Este flujo solo permite editar la fecha/hora y la capacidad de la clase.',
+    };
+  }
+  if (providedKeys.length === 0) {
+    return { success: false, error: 'No se proporcionaron cambios.' };
+  }
+
+  const openClass = await db.query.openClasses.findFirst({
+    where: eq(openClasses.id, classId),
+  });
+
+  if (!openClass) {
+    return { success: false, error: 'Clase no encontrada.' };
+  }
+
+  // Ownership (403): admin edita cualquiera; coach solo sus clases.
+  if (session.role !== 'admin' && openClass.coachUserId !== session.sub) {
+    return { success: false, error: 'No tienes permisos para esta clase.' };
+  }
+
+  if (openClass.status !== 'scheduled') {
+    return { success: false, error: 'Solo se pueden editar clases programadas.' };
+  }
+
+  const update: { classDate?: Date; capacity?: number } = {};
+
+  if (input.classDate !== undefined && input.classDate !== null && input.classDate !== '') {
+    const classDate = String(input.classDate);
+    const hasTimezone =
+      classDate.includes('Z') ||
+      classDate.includes('+') ||
+      /T\d{2}:\d{2}.*[-+]\d/.test(classDate);
+    const date = hasTimezone ? new Date(classDate) : parseDateTimeLocalAsMexicoCity(classDate);
+
+    if (isNaN(date.getTime())) {
+      return { success: false, error: 'Fecha y hora no válidas.', field: 'classDate' };
+    }
+    if (date <= new Date()) {
+      return { success: false, error: 'La fecha debe ser en el futuro.', field: 'classDate' };
+    }
+
+    update.classDate = date;
+  }
+
+  if (input.capacity !== undefined && input.capacity !== null && String(input.capacity) !== '') {
+    const capacity = parseInt(String(input.capacity), 10);
+    if (isNaN(capacity) || capacity < 1 || capacity > 20) {
+      return { success: false, error: 'La capacidad debe ser entre 1 y 20.', field: 'capacity' };
+    }
+
+    const occupied = await getTotalOccupied(classId);
+    if (capacity < occupied) {
+      return {
+        success: false,
+        error: `La capacidad no puede ser menor a los ${occupied} cupos ocupados actuales.`,
+        field: 'capacity',
+      };
+    }
+
+    update.capacity = capacity;
+  }
+
+  if (Object.keys(update).length === 0) {
+    return { success: false, error: 'No se proporcionaron cambios válidos.' };
+  }
+
+  await db.update(openClasses).set(update).where(eq(openClasses.id, classId));
+
+  revalidatePath('/coach/classes');
+  revalidatePath('/admin/classes');
+  revalidatePath('/');
+  return { success: true, message: 'Clase actualizada exitosamente.' };
 }
 
 export async function createClassAction(

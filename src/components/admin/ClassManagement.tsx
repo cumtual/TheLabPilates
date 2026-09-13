@@ -7,6 +7,7 @@ import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Pagination } from '@/components/ui/Pagination';
+import { EditClassModal } from '@/components/coach/EditClassModal';
 
 const CLIENT_PAGE_SIZE = 10;
 
@@ -78,6 +79,7 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [clientPage, setClientPage] = useState(1);
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
 
   const filteredClasses = filter === 'all'
     ? classes
@@ -88,6 +90,8 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
     (clientPage - 1) * CLIENT_PAGE_SIZE,
     clientPage * CLIENT_PAGE_SIZE
   );
+
+  const editingClass = classes.find((cls) => cls.id === editingClassId) ?? null;
 
   // Counts come from ALL data (not just the current page)
   const counts: Record<StatusFilter, number> = {
@@ -203,6 +207,15 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
                     <div className="flex flex-col gap-2 items-end">
                       {classItem.status === 'scheduled' && (
                         <button
+                          type="button"
+                          onClick={() => setEditingClassId(classItem.id)}
+                          className="min-w-11 min-h-11 px-3 py-2 bg-soft-charcoal text-on-primary text-sm rounded-lg hover:bg-soft-charcoal/90 transition-colors font-bold cursor-pointer"
+                        >
+                          Editar
+                        </button>
+                      )}
+                      {classItem.status === 'scheduled' && (
+                        <button
                           onClick={() => handleCancel(classItem.id)}
                           disabled={isPending && cancellingId === classItem.id}
                           className="min-w-11 min-h-11 px-3 py-2 bg-red-800 text-on-error text-sm rounded-lg hover:bg-error/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-white font-bold cursor-pointer"
@@ -273,6 +286,18 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
         totalPages={totalClientPages}
         onChange={setClientPage}
       />
+
+      {editingClass && (
+        <EditClassModal
+          key={editingClass.id}
+          isOpen={editingClassId !== null}
+          onClose={() => setEditingClassId(null)}
+          classId={editingClass.id}
+          classDate={editingClass.classDate}
+          capacity={editingClass.capacity}
+          occupied={editingClass.enrolledStudents.length}
+        />
+      )}
     </div>
   );
 }

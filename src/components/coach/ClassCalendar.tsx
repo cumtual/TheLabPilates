@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
 import { Pagination } from '@/components/ui/Pagination';
 import { getClassDisplayName } from '@/lib/utils/class-type';
+import { EditClassModal } from '@/components/coach/EditClassModal';
 
 const CLIENT_PAGE_SIZE = 10;
 
@@ -24,6 +25,10 @@ interface OpenClass {
 
 interface ClassCalendarProps {
   classes: OpenClass[];
+  /** ID del usuario autenticado (coach) para validar ownership en UI. */
+  currentUserId?: string;
+  /** Cupos ocupados por clase (classId -> total). */
+  occupiedByClass?: Record<string, number>;
 }
 
 type StatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
@@ -52,9 +57,14 @@ function isClassPast(date: Date | string | null): boolean {
   return new Date(date) < new Date();
 }
 
-export function ClassCalendar({ classes }: ClassCalendarProps) {
+export function ClassCalendar({
+  classes,
+  currentUserId,
+  occupiedByClass = {},
+}: ClassCalendarProps) {
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [clientPage, setClientPage] = useState(1);
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
 
   const filteredClasses = (filter === 'all'
     ? classes
@@ -91,6 +101,8 @@ export function ClassCalendar({ classes }: ClassCalendarProps) {
     (clientPage - 1) * CLIENT_PAGE_SIZE,
     clientPage * CLIENT_PAGE_SIZE
   );
+
+  const editingClass = classes.find((cls) => cls.id === editingClassId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -158,35 +170,46 @@ export function ClassCalendar({ classes }: ClassCalendarProps) {
                   </Badge>
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <span className="font-body text-sm text-on-surface-variant">
                     Capacidad: {cls.capacity ?? '—'}
                   </span>
 
-                  {isPast && cls.status === 'completed' && (
-                    <Link
-                      href={`/coach/attendance/${cls.id}`}
-                      className="font-body text-sm text-primary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center"
-                    >
-                      Ver asistencia
-                    </Link>
-                  )}
-                  {isPast && cls.status === 'scheduled' && (
-                    <Link
-                      href={`/coach/attendance/${cls.id}`}
-                      className="font-body text-sm text-primary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center"
-                    >
-                      Tomar asistencia
-                    </Link>
-                  )}
-                  {!isPast && cls.status === 'scheduled' && (
-                    <Link
-                      href={`/coach/attendance/${cls.id}`}
-                      className="font-body text-sm text-primary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center"
-                    >
-                      Ver inscritos
-                    </Link>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {isPast && cls.status === 'completed' && (
+                      <Link
+                        href={`/coach/attendance/${cls.id}`}
+                        className="font-body text-sm text-primary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center"
+                      >
+                        Ver asistencia
+                      </Link>
+                    )}
+                    {isPast && cls.status === 'scheduled' && (
+                      <Link
+                        href={`/coach/attendance/${cls.id}`}
+                        className="font-body text-sm text-primary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center"
+                      >
+                        Tomar asistencia
+                      </Link>
+                    )}
+                    {!isPast && cls.status === 'scheduled' && (
+                      <Link
+                        href={`/coach/attendance/${cls.id}`}
+                        className="font-body text-sm text-primary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center"
+                      >
+                        Ver inscritos
+                      </Link>
+                    )}
+                    {!isPast && cls.status === 'scheduled' && cls.coachUserId === currentUserId && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingClassId(cls.id)}
+                        className="font-body text-sm text-secondary font-medium hover:underline min-h-11 min-w-11 flex items-center justify-center cursor-pointer"
+                      >
+                        Editar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </Card>
             );
@@ -199,6 +222,18 @@ export function ClassCalendar({ classes }: ClassCalendarProps) {
         totalPages={totalClientPages}
         onChange={setClientPage}
       />
+
+      {editingClass && (
+        <EditClassModal
+          key={editingClass.id}
+          isOpen={editingClassId !== null}
+          onClose={() => setEditingClassId(null)}
+          classId={editingClass.id}
+          classDate={editingClass.classDate}
+          capacity={editingClass.capacity}
+          occupied={occupiedByClass[editingClass.id] ?? 0}
+        />
+      )}
     </div>
   );
 }
