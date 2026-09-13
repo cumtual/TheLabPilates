@@ -107,7 +107,7 @@ export default function Pricing() {
                       {pkg.sessions}
                     </p>
                     <p className="font-headline text-[40px] text-plaster-white">
-                      {/* {pkg.price} */}
+                      {pkg.price}
                     </p>
                   </div>
                 ) : (
@@ -115,7 +115,7 @@ export default function Pricing() {
                     <p className="text-[11px] font-semibold text-primary tracking-widest mb-6">
                       {pkg.sessions}
                     </p>
-                    {/* <p className="font-headline text-[40px] mb-8">{pkg.price}</p> */}
+                    <p className="font-headline text-[40px] mb-8">{pkg.price}</p>
                   </>
                 )}
 
