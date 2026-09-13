@@ -3,7 +3,24 @@ import { openClasses, users, classEnrollments, guestEnrollments } from '@/db/sch
 import { eq, and, gte, lte, count, inArray, notInArray } from 'drizzle-orm';
 import { ScheduleClient } from './ScheduleClient';
 import { getClassDisplayName } from '@/lib/utils/class-type';
+import { TIMEZONE } from '@/lib/utils/date';
 import { getRollingWeekRange, getRollingDayIndex, getRollingDays } from './schedule-utils';
+
+const classTimeFormatter = new Intl.DateTimeFormat('es-MX', {
+  timeZone: TIMEZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+/**
+ * Renders a class time range in America/Mexico_City (single-hour duration).
+ * e.g. "19:00 - 20:00"
+ */
+function formatClassTimeRange(classStart: Date): string {
+  const classEnd = new Date(classStart.getTime() + 60 * 60 * 1000);
+  return `${classTimeFormatter.format(classStart)} - ${classTimeFormatter.format(classEnd)}`;
+}
 
 export interface WeekClass {
   id: string;
@@ -88,16 +105,12 @@ export default async function Schedule() {
   const formattedClasses: WeekClass[] = weekClasses.map((cls) => {
     const date = cls.classDate ? new Date(cls.classDate) : new Date();
 
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const endHour = (date.getHours() + 1).toString().padStart(2, '0');
-
     const capacity = cls.capacity ?? 0;
     const occupied = occupiedByClass.get(cls.id) ?? 0;
 
     return {
       id: cls.id,
-      time: `${hours}:${minutes} - ${endHour}:${minutes}`,
+      time: formatClassTimeRange(date),
       classType: getClassDisplayName(cls.classType ?? null, cls.customName ?? null),
       coachName: cls.coachName ?? 'Instructor',
       dayIndex: getRollingDayIndex(date, start),
