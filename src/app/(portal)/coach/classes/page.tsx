@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { openClasses } from '@/db/schema';
-import { eq, and, gte, desc } from 'drizzle-orm';
+import { openClasses, classEnrollments, guestEnrollments } from '@/db/schema';
+import { eq, and, gte, desc, count, inArray, notInArray } from 'drizzle-orm';
 import { ClassCalendar } from '@/components/coach/ClassCalendar';
 import Link from 'next/link';
 import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
@@ -29,6 +29,57 @@ export default async function CoachClassesPage() {
     )
     .orderBy(desc(openClasses.classDate));
 
+  // Occupancy per class (holders + guests, excluding cancelled/late_cancelled).
+  const classIds = classes.map((cls) => cls.id);
+  const occupiedByClass = new Map<string, number>();
+
+  if (classIds.length > 0) {
+    const excludedStatuses: ('cancelled' | 'late_cancelled')[] = [
+      'cancelled',
+      'late_cancelled',
+    ];
+
+    const enrollmentRows = await db
+      .select({
+        classId: classEnrollments.openClassId,
+        total: count(classEnrollments.id),
+      })
+      .from(classEnrollments)
+      .where(
+        and(
+          inArray(classEnrollments.openClassId, classIds),
+          notInArray(classEnrollments.status, excludedStatuses)
+        )
+      )
+      .groupBy(classEnrollments.openClassId);
+
+    const guestRows = await db
+      .select({
+        classId: guestEnrollments.openClassId,
+        total: count(guestEnrollments.id),
+      })
+      .from(guestEnrollments)
+      .where(
+        and(
+          inArray(guestEnrollments.openClassId, classIds),
+          notInArray(guestEnrollments.status, excludedStatuses)
+        )
+      )
+      .groupBy(guestEnrollments.openClassId);
+
+    for (const row of enrollmentRows) {
+      occupiedByClass.set(row.classId, row.total);
+    }
+    for (const row of guestRows) {
+      occupiedByClass.set(row.classId, (occupiedByClass.get(row.classId) ?? 0) + row.total);
+    }
+  }
+
+  const occupiedCounts: Record<string, number> = {};
+  for (const [classId, total] of occupiedByClass) {
+    occupiedCounts[classId] = total;
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 py-6">
@@ -42,7 +93,11 @@ export default async function CoachClassesPage() {
           + Nueva Clase
         </Link>
       </div>
-      <ClassCalendar classes={classes} />
+      <ClassCalendar
+        classes={classes}
+        currentUserId={session.sub}
+        occupiedByClass={occupiedCounts}
+      />
     </div>
   );
 }
