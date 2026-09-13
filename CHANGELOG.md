@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/cumtual/TheLabPilates/compare/v1.8.0...v1.9.0) (2026-09-13)
+
+
+### Features
+
+* **pricing:** display package prices in the pricing section ([4e656cb](https://github.com/cumtual/TheLabPilates/commit/4e656cbea291f99f0aee3c7ba7b52ed70acc2c43))
+* **pricing:** display package prices in the pricing section ([9d0e9ad](https://github.com/cumtual/TheLabPilates/commit/9d0e9ad212d9f036eaf27f7bf99e209b2daebfd1))
+
 ## [1.8.0](https://github.com/cumtual/TheLabPilates/compare/v1.7.1...v1.8.0) (2026-09-12)
 
 
