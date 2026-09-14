@@ -64,21 +64,52 @@ import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 
 /**
- * Mocks the two db.select chains cancelReservationAction runs before the date check,
- * in call order:
- * 1. Open Lab check:     db.select({...}).from(...).leftJoin(...).where(...) → [{ guest }]
- * 2. Active guest check: db.select({...}).from(...).where(...) → rows
+ * Mocks the db.select chains cancelReservationAction runs, in call order:
+ * 1. Enrollment + ownership: db.select({...}).from().innerJoin().where() → [{ enrollment, userSubscription }]
+ * 2. Open Lab check:         db.select({...}).from().leftJoin().where()  → [{ guest }]
+ * 3. Active guest check:     db.select({...}).from().where()            → rows
  *
- * Defaults model a regular (non-Open Lab) subscription with no associated guest,
- * so the cancellation proceeds to the date logic under test.
+ * Defaults model an enrollment owned by the session user, a regular
+ * (non-Open Lab) subscription with no associated guest, so the cancellation
+ * proceeds to the date logic under test.
  */
-function setupCancelSelectMock(options: { isOpenLab?: boolean; activeGuests?: unknown[] } = {}) {
-  const { isOpenLab = false, activeGuests = [] } = options;
+function setupCancelSelectMock(options: {
+  enrollment?: Record<string, unknown>;
+  ownerUserId?: string;
+  isOpenLab?: boolean;
+  activeGuests?: unknown[];
+} = {}) {
+  const {
+    enrollment = {
+      id: 'enrollment-default',
+      openClassId: 'class-uuid-456',
+      userSubscriptionId: 'sub-default',
+      status: 'pending',
+      createdAt: new Date(),
+    },
+    ownerUserId = 'user-uuid-123',
+    isOpenLab = false,
+    activeGuests = [],
+  } = options;
 
   let callIndex = 0;
   (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
     callIndex++;
     if (callIndex === 1) {
+      return {
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([
+              {
+                enrollment,
+                userSubscription: { id: enrollment.userSubscriptionId, userId: ownerUserId },
+              },
+            ]),
+          }),
+        }),
+      };
+    }
+    if (callIndex === 2) {
       return {
         from: vi.fn().mockReturnValue({
           leftJoin: vi.fn().mockReturnValue({
@@ -219,6 +250,9 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
             createdAt: new Date(),
           });
 
+          // Enrollment + ownership select
+          setupCancelSelectMock();
+
           // Mock db.update for setting status to late_cancelled
           const mockWhere = vi.fn().mockResolvedValue(undefined);
           const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
@@ -317,6 +351,9 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
       status: 'scheduled',
       createdAt: new Date(),
     });
+
+    // Enrollment + ownership select
+    setupCancelSelectMock();
 
     const mockWhere = vi.fn().mockResolvedValue(undefined);
     const mockSet = vi.fn().mockReturnValue({ where: mockWhere });

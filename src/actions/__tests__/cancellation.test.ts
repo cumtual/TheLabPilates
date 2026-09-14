@@ -9,9 +9,6 @@ vi.mock('@/db', () => ({
       openClasses: {
         findFirst: vi.fn(),
       },
-      classEnrollments: {
-        findFirst: vi.fn(),
-      },
     },
     transaction: vi.fn(),
     delete: vi.fn(),
@@ -48,21 +45,50 @@ import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 
 /**
- * Mocks the two db.select chains cancelReservationAction runs before the date check,
- * in call order:
- * 1. Open Lab check:   db.select({...}).from(...).leftJoin(...).where(...) → [{ guest }]
- * 2. Active guest check: db.select({...}).from(...).where(...) → rows
+ * Mocks the three db.select chains cancelReservationAction runs, in call order:
+ * 1. Enrollment + ownership: db.select({...}).from().innerJoin().where() → [{ enrollment, userSubscription }]
+ * 2. Open Lab check:         db.select({...}).from().leftJoin().where()  → [{ guest }]
+ * 3. Active guest check:     db.select({...}).from().where()            → rows
  *
- * Defaults model the common path: a regular (non-Open Lab) subscription with no
- * associated guest, so the cancellation proceeds to the date/transaction logic.
+ * Defaults model the common path: an enrollment owned by `ownerUserId`
+ * (default matches the session sub), a regular (non-Open Lab) subscription
+ * with no associated guest, so the cancellation proceeds to the date logic.
  */
-function setupCancelSelectMock(options: { isOpenLab?: boolean; activeGuests?: unknown[] } = {}) {
-  const { isOpenLab = false, activeGuests = [] } = options;
+function setupCancelSelectMock(options: {
+  enrollment: Record<string, unknown>;
+  ownerUserId?: string;
+  isOpenLab?: boolean;
+  activeGuests?: unknown[];
+}) {
+  const {
+    enrollment,
+    ownerUserId = 'user-uuid-123',
+    isOpenLab = false,
+    activeGuests = [],
+  } = options;
 
   let callIndex = 0;
   (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
     callIndex++;
     if (callIndex === 1) {
+      // Enrollment + ownership chain: .from().innerJoin().where()
+      return {
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([
+              {
+                enrollment,
+                userSubscription: {
+                  id: enrollment.userSubscriptionId,
+                  userId: ownerUserId,
+                },
+              },
+            ]),
+          }),
+        }),
+      };
+    }
+    if (callIndex === 2) {
       // Open Lab check chain: .from().leftJoin().where()
       return {
         from: vi.fn().mockReturnValue({
@@ -125,17 +151,16 @@ describe('Property 18: Timely Cancellation Refunds Credit', () => {
             email: 'client@test.com',
           });
 
-          // Mock enrollment: pending status
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            id: enrollmentId,
-            openClassId: 'class-uuid-123',
-            userSubscriptionId: subscriptionId,
-            status: 'pending',
-            createdAt: new Date(),
+          // Enrollment (pending, owned by the session user) + regular subscription, no guest
+          setupCancelSelectMock({
+            enrollment: {
+              id: enrollmentId,
+              openClassId: 'class-uuid-123',
+              userSubscriptionId: subscriptionId,
+              status: 'pending',
+              createdAt: new Date(),
+            },
           });
-
-          // Regular subscription, no associated guest → proceeds to date/transaction logic
-          setupCancelSelectMock();
 
           // Mock class: future date ≥24h away
           const classDate = futureDateHoursAhead(hoursUntilClass);
@@ -217,13 +242,15 @@ describe('Property 19: Late Cancellation No Refund', () => {
             email: 'client@test.com',
           });
 
-          // Mock enrollment: pending status
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            id: enrollmentId,
-            openClassId: 'class-uuid-123',
-            userSubscriptionId: subscriptionId,
-            status: 'pending',
-            createdAt: new Date(),
+          // Enrollment (pending, owned by the session user)
+          setupCancelSelectMock({
+            enrollment: {
+              id: enrollmentId,
+              openClassId: 'class-uuid-123',
+              userSubscriptionId: subscriptionId,
+              status: 'pending',
+              createdAt: new Date(),
+            },
           });
 
           // Mock class: future date <24h away
@@ -295,13 +322,15 @@ describe('Property 20: Non-Eligible Enrollment Cancellation Block', () => {
             email: 'client@test.com',
           });
 
-          // Mock enrollment with non-pending status
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            id: enrollmentId,
-            openClassId: 'class-uuid-123',
-            userSubscriptionId: subscriptionId,
-            status,
-            createdAt: new Date(),
+          // Enrollment with non-pending status, owned by the session user
+          setupCancelSelectMock({
+            enrollment: {
+              id: enrollmentId,
+              openClassId: 'class-uuid-123',
+              userSubscriptionId: subscriptionId,
+              status,
+              createdAt: new Date(),
+            },
           });
 
           const result = await cancelReservationAction(enrollmentId);
@@ -335,17 +364,16 @@ describe('Property 20: Non-Eligible Enrollment Cancellation Block', () => {
             email: 'client@test.com',
           });
 
-          // Mock enrollment: pending status
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            id: enrollmentId,
-            openClassId: 'class-uuid-123',
-            userSubscriptionId: subscriptionId,
-            status: 'pending',
-            createdAt: new Date(),
+          // Enrollment (pending, owned by the session user) + regular subscription, no guest
+          setupCancelSelectMock({
+            enrollment: {
+              id: enrollmentId,
+              openClassId: 'class-uuid-123',
+              userSubscriptionId: subscriptionId,
+              status: 'pending',
+              createdAt: new Date(),
+            },
           });
-
-          // Regular subscription, no associated guest → proceeds to the past-date check
-          setupCancelSelectMock();
 
           // Mock class: past date
           const classDate = pastDate(daysAgo);
@@ -374,5 +402,74 @@ describe('Property 20: Non-Eligible Enrollment Cancellation Block', () => {
       ),
       { numRuns: 30 }
     );
+  });
+});
+
+/**
+ * IDOR Guard: Ownership Verification (CWE-639)
+ *
+ * A client must not be able to cancel an enrollment that belongs to another user,
+ * even when the enrollment id is known. The action must reject with a permission
+ * error and perform no mutation.
+ */
+describe('IDOR Guard: Ownership Verification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('cancelReservationAction rejects an enrollment owned by another user', async () => {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sub: 'user-A',
+      role: 'client',
+      email: 'a@test.com',
+    });
+
+    setupCancelSelectMock({
+      ownerUserId: 'user-B',
+      enrollment: {
+        id: 'enrollment-owned-by-B',
+        openClassId: 'class-uuid-123',
+        userSubscriptionId: 'sub-B',
+        status: 'pending',
+        createdAt: new Date(),
+      },
+    });
+
+    const result = await cancelReservationAction('enrollment-owned-by-B');
+
+    expect(result.success).toBe(false);
+    expect((result as { success: false; error: string }).error).toBe(
+      'No tienes permisos para esta acción.'
+    );
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('confirmLateCancellationAction rejects an enrollment owned by another user', async () => {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sub: 'user-A',
+      role: 'client',
+      email: 'a@test.com',
+    });
+
+    setupCancelSelectMock({
+      ownerUserId: 'user-B',
+      enrollment: {
+        id: 'enrollment-owned-by-B',
+        openClassId: 'class-uuid-123',
+        userSubscriptionId: 'sub-B',
+        status: 'pending',
+        createdAt: new Date(),
+      },
+    });
+
+    const result = await confirmLateCancellationAction('enrollment-owned-by-B');
+
+    expect(result.success).toBe(false);
+    expect((result as { success: false; error: string }).error).toBe(
+      'No tienes permisos para esta acción.'
+    );
+    expect(db.update).not.toHaveBeenCalled();
   });
 });
