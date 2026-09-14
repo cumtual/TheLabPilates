@@ -3,23 +3,16 @@ import { openClasses, users, classEnrollments, guestEnrollments } from '@/db/sch
 import { eq, and, gte, lte, count, inArray, notInArray } from 'drizzle-orm';
 import { ScheduleClient } from './ScheduleClient';
 import { getClassDisplayName } from '@/lib/utils/class-type';
-import { TIMEZONE } from '@/lib/utils/date';
+import { formatTimeWithMeridiem } from '@/lib/utils/date';
 import { getRollingWeekRange, getRollingDayIndex, getRollingDays } from './schedule-utils';
-
-const classTimeFormatter = new Intl.DateTimeFormat('es-MX', {
-  timeZone: TIMEZONE,
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
 
 /**
  * Renders a class time range in America/Mexico_City (single-hour duration).
- * e.g. "19:00 - 20:00"
+ * e.g. "07:00 P.M. - 08:00 P.M."
  */
 function formatClassTimeRange(classStart: Date): string {
   const classEnd = new Date(classStart.getTime() + 60 * 60 * 1000);
-  return `${classTimeFormatter.format(classStart)} - ${classTimeFormatter.format(classEnd)}`;
+  return `${formatTimeWithMeridiem(classStart)} - ${formatTimeWithMeridiem(classEnd)}`;
 }
 
 export interface WeekClass {

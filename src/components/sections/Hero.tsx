@@ -28,7 +28,7 @@ export default function Hero() {
         className="absolute inset-0 z-0 scale-105 transition-transform duration-[2s]"
       >
         <Image
-          src="/images/hero-studio.png"
+          src="/images/estudio.jpeg"
           alt="The Lab Studio Interior"
           fill
           priority
@@ -36,7 +36,7 @@ export default function Hero() {
           sizes="100vw"
           className="object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-plaster-white/35 via-plaster-white/40 to-plaster-white/55" />
       </div>
 
       {/* Hero Content */}
