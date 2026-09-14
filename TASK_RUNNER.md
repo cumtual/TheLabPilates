@@ -214,3 +214,93 @@ pnpm lint && pnpm build
 - [x] Los 7 tabs coinciden con el calendario CDMX.
 - [x] Clases nocturnas que cruzan medianoche UTC permanecen en su día local.
 - [x] Tests verdes en `TZ=UTC` y `TZ=America/Mexico_City`.
+
+---
+
+# SECURITY-P0-P1 — Parches Críticos/Altos (Auditoría AppSec 2026-09-14)
+
+**Estado:** ✅ Ejecutado
+**Prioridad:** Crítica / Alta
+**Alcance:** solo hallazgos Críticos y Altos. NO toca diseño, UI ni tipografía.
+**Fuera de alcance (lote P2/P3):** rate limiter distribuido, security headers, JWT fail-fast, waitlist, seed.
+
+## TASK-DEPS-NEXT-SECURITY-UPGRADE
+
+- **Archivo:** `package.json`, `pnpm-lock.yaml`
+- **Contexto:** dependencia `next` en `16.2.11`.
+- **Diagnóstico:** `pnpm audit` reporta 2 advisories CRÍTICOS sobre `next >=16.0.0 <16.3.3`
+  (GHSA-p293-qw3h-jr36 RCE no autenticado en Windows; GHSA-2xp9-vwfh-vxw4 RCE en Image
+  Optimization con AVIF). El bump resuelve además los altos transitivos (`sharp`, `postcss`, `nanoid`).
+- **Comando:**
+  ```bash
+  pnpm update next@16.3.5
+  pnpm audit
+  ```
+- **Verificación:** `pnpm exec tsc --noEmit && pnpm exec vitest run && pnpm build`
+
+## TASK-BACKEND-ENROLL-CAPACITY-LOCK
+
+- **Archivos:** `src/actions/enrollment.ts` (`enrollInClassAction`), `src/lib/guest/capacity.ts`
+- **Diagnóstico:** la verificación de capacidad y de duplicado corre FUERA de la transacción;
+  dos requests concurrentes pasan ambos checks y sobre-reservan (race condition / CWE-362).
+  `enrollWithGuestAction` ya usa `SELECT ... FOR UPDATE`; esta acción no.
+- **Snippet:** `getAvailableCapacity(classId, conn = db)` / `getTotalOccupied(classId, conn = db)`
+  aceptan conexión/transacción; dentro del tx se hace `SELECT id FROM open_class WHERE id = ${classId} FOR UPDATE`,
+  se re-verifican capacidad y duplicado bajo el lock y recién entonces se inserta y decrementa.
+
+## TASK-BACKEND-CANCEL-OWNERSHIP-GUARD
+
+- **Archivo:** `src/actions/enrollment.ts`
+- **Contexto:** `cancelReservationAction` (L140-241) y `confirmLateCancellationAction` (L243-298).
+- **Diagnóstico:** el enrollment se obtiene solo por ID y NUNCA se valida que pertenezca a
+  `session.sub` (IDOR / CWE-639). Un cliente puede cancelar reservaciones ajenas.
+- **Snippet:** join `classEnrollments` → `userSubscriptions`, `where(eq(classEnrollments.id, enrollmentId))`,
+  guard `enrollmentRow.userSubscription.userId !== session.sub → 'No tienes permisos para esta acción.'`.
+
+## TASK-BACKEND-GUEST-CANCEL-OWNERSHIP-GUARD
+
+- **Archivo:** `src/actions/guest.ts`
+- **Contexto:** `cancelReservationWithGuestAction` (L723-819).
+- **Diagnóstico:** el enrollment titular se obtiene solo por ID; el check `registeredById === session.sub`
+  aplica solo al invitado. IDOR sobre el titular. **Hallazgo adicional durante la ejecución:**
+  `confirmLateCancelBothAction` (L837-904) tenía el mismo IDOR; también fue parchado.
+- **Snippet:** mismo join + guard de ownership antes de cancelar titular + invitado.
+
+## TASK-DEPS-CHANGE — `next.config.ts`
+
+- **Archivo:** `next.config.ts`
+- **Diagnóstico:** el upgrade a `next@16.3.5` eliminó la opción experimental
+  `experimental.viewTransition` (las view transitions ya son estables sin configuración).
+  `tsc` fallaba con `TS2353`. Se retiró el bloque `experimental`.
+- **Verificación:** `pnpm exec tsc --noEmit` (0 errores) + `pnpm build` (exitoso).
+
+## TASK-TEST-CANCELLATION-OWNERSHIP
+
+- **Archivo:** `src/actions/__tests__/cancellation.test.ts`
+- **Diagnóstico:** los mocks usan `db.query.classEnrollments.findFirst`; tras el parche las acciones
+  usan `db.select(...).from(...).innerJoin(...).where(...)`. Hay que adaptar los describes existentes
+  y agregar casos de rechazo por ownership.
+
+## TASK-VERIFY-FULL-SUITE
+
+```bash
+pnpm audit
+pnpm exec tsc --noEmit
+pnpm exec vitest run
+pnpm lint
+pnpm build
+```
+
+### Criterio de Aceptación
+- [x] 0 vulnerabilidades críticas en `pnpm audit` (`--prod`: sin vulnerabilidades; restantes son dev-only transitivas).
+- [x] Cancelación de enrollment ajeno rechazada (tests nuevos en `cancellation.test.ts`).
+- [x] Sin overbooking bajo enrollments concurrentes (`SELECT ... FOR UPDATE` + re-verificación en tx).
+- [x] Suite de tests en verde (423/423) y `pnpm build` exitoso.
+
+### Resultado de la verificación
+- `pnpm audit --prod` → **No known vulnerabilities found** (de 2 críticas + 6 altas a 0 en producción).
+- `next` 16.2.11 → **16.3.5**.
+- `pnpm exec tsc --noEmit` → 0 errores.
+- `pnpm exec vitest run` → **51 archivos / 423 tests pasando**.
+- `pnpm lint` (archivos tocados) → 0 errores; 1 warning preexistente en `guest.ts:15` (`consumeGuestCredit`).
+- `pnpm build` → **Compiled successfully**.
