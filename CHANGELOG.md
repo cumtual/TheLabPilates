@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.0](https://github.com/cumtual/TheLabPilates/compare/v1.10.0...v1.11.0) (2026-09-14)
+
+
+### Features
+
+* **pricing:** update subscription prices for various packages ([726afe1](https://github.com/cumtual/TheLabPilates/commit/726afe1c57c427ef9e29e2fed4bd51ddbc05fc66))
+* **pricing:** update subscription prices for various packages ([a427b20](https://github.com/cumtual/TheLabPilates/commit/a427b20397d2fe74dcf7d5b9cbb4b5d47842a1f0))
+
 ## [1.10.0](https://github.com/cumtual/TheLabPilates/compare/v1.9.0...v1.10.0) (2026-09-13)
 
 
