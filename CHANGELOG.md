@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.0](https://github.com/cumtual/TheLabPilates/compare/v1.11.0...v1.12.0) (2026-09-14)
+
+
+### Features
+
+* update hero image and refactor class time formatting ([95f2008](https://github.com/cumtual/TheLabPilates/commit/95f200897dbc4bc7ec733427a545bfbc1c17b533))
+* update hero image and refactor class time formatting ([a101497](https://github.com/cumtual/TheLabPilates/commit/a101497285a821b23f98321807ef9dcc7ae33c96))
+
 ## [1.11.0](https://github.com/cumtual/TheLabPilates/compare/v1.10.0...v1.11.0) (2026-09-14)
 
 
