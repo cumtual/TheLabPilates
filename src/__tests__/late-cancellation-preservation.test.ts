@@ -61,21 +61,52 @@ import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 
 /**
- * Mocks the two db.select chains cancelReservationAction runs before the date check,
- * in call order:
- * 1. Open Lab check:     db.select({...}).from(...).leftJoin(...).where(...) → [{ guest }]
- * 2. Active guest check: db.select({...}).from(...).where(...) → rows
+ * Mocks the db.select chains cancelReservationAction runs, in call order:
+ * 1. Enrollment + ownership: db.select({...}).from().innerJoin().where() → [{ enrollment, userSubscription }]
+ * 2. Open Lab check:         db.select({...}).from().leftJoin().where()  → [{ guest }]
+ * 3. Active guest check:     db.select({...}).from().where()            → rows
  *
- * Defaults model a regular (non-Open Lab) subscription with no associated guest,
- * so the cancellation proceeds to the date/transaction logic.
+ * Defaults model an enrollment owned by the session user, a regular
+ * (non-Open Lab) subscription with no associated guest, so the cancellation
+ * proceeds to the date/transaction logic.
  */
-function setupCancelSelectMock(options: { isOpenLab?: boolean; activeGuests?: unknown[] } = {}) {
-  const { isOpenLab = false, activeGuests = [] } = options;
+function setupCancelSelectMock(options: {
+  enrollment?: Record<string, unknown>;
+  ownerUserId?: string;
+  isOpenLab?: boolean;
+  activeGuests?: unknown[];
+} = {}) {
+  const {
+    enrollment = {
+      id: 'enrollment-default',
+      openClassId: 'class-uuid-123',
+      userSubscriptionId: 'sub-default',
+      status: 'pending',
+      createdAt: new Date(),
+    },
+    ownerUserId = 'user-uuid-123',
+    isOpenLab = false,
+    activeGuests = [],
+  } = options;
 
   let callIndex = 0;
   (db.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
     callIndex++;
     if (callIndex === 1) {
+      return {
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([
+              {
+                enrollment,
+                userSubscription: { id: enrollment.userSubscriptionId, userId: ownerUserId },
+              },
+            ]),
+          }),
+        }),
+      };
+    }
+    if (callIndex === 2) {
       return {
         from: vi.fn().mockReturnValue({
           leftJoin: vi.fn().mockReturnValue({
@@ -307,13 +338,15 @@ describe('Preservation Property 3: Non-Pending Block Preservation', () => {
             email: 'client@test.com',
           });
 
-          // Mock enrollment with non-pending status
-          (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-            id: enrollmentId,
-            openClassId: 'class-uuid-123',
-            userSubscriptionId: subscriptionId,
-            status,
-            createdAt: new Date(),
+          // Enrollment with non-pending status, owned by the session user
+          setupCancelSelectMock({
+            enrollment: {
+              id: enrollmentId,
+              openClassId: 'class-uuid-123',
+              userSubscriptionId: subscriptionId,
+              status,
+              createdAt: new Date(),
+            },
           });
 
           const result = await cancelReservationAction(enrollmentId);

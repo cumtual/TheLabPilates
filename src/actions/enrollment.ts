@@ -110,8 +110,39 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
     return { success: false, error: 'Ya estás inscrito en esta clase.' };
   }
 
-  // 5. Atomic transaction: create enrollment + decrement days_remaining (only for non-Open Lab)
+  // 5. Atomic transaction with row lock: re-verify capacity + duplicate INSIDE the
+  //    transaction so concurrent enrollments cannot overbook the class (CWE-362).
+  let txError: string | null = null;
+
   await db.transaction(async (tx) => {
+    // Lock the class row — serializes concurrent enrollments for this class.
+    await tx.execute(sql`SELECT id FROM open_class WHERE id = ${classId} FOR UPDATE`);
+
+    // Re-verify capacity under the lock.
+    const availableUnderLock = await getAvailableCapacity(classId, tx);
+    if (availableUnderLock < 1) {
+      txError = 'Clase llena.';
+      tx.rollback();
+    }
+
+    // Re-verify duplicate enrollment under the lock.
+    const duplicateUnderLock = await tx
+      .select({ id: classEnrollments.id })
+      .from(classEnrollments)
+      .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+      .where(
+        and(
+          eq(classEnrollments.openClassId, classId),
+          eq(userSubscriptions.userId, session.sub),
+          notInArray(classEnrollments.status, ['cancelled', 'late_cancelled'])
+        )
+      );
+
+    if (duplicateUnderLock.length > 0) {
+      txError = 'Ya estás inscrito en esta clase.';
+      tx.rollback();
+    }
+
     await tx.insert(classEnrollments).values({
       openClassId: classId,
       userSubscriptionId: userSub.id,
@@ -127,6 +158,10 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       `);
     }
   });
+
+  if (txError) {
+    return { success: false, error: txError };
+  }
 
   revalidatePath('/client');
   revalidatePath('/client/classes');
@@ -150,14 +185,24 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
     return { success: false, error: 'ID de reservación no proporcionado.' };
   }
 
-  // Get enrollment record
-  const enrollment = await db.query.classEnrollments.findFirst({
-    where: eq(classEnrollments.id, enrollmentId),
-  });
+  // Get enrollment + verify ownership in a single query (IDOR guard / CWE-639)
+  const enrollmentRow = await db
+    .select({ enrollment: classEnrollments, userSubscription: userSubscriptions })
+    .from(classEnrollments)
+    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+    .where(eq(classEnrollments.id, enrollmentId))
+    .then((rows) => rows[0] ?? null);
 
-  if (!enrollment) {
+  if (!enrollmentRow) {
     return { success: false, error: 'Reservación no encontrada.' };
   }
+
+  // The enrollment must belong to the authenticated user.
+  if (enrollmentRow.userSubscription.userId !== session.sub) {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  const enrollment = enrollmentRow.enrollment;
 
   // Block cancellation for non-pending enrollments
   if (enrollment.status !== 'pending') {
@@ -253,14 +298,24 @@ export async function confirmLateCancellationAction(enrollmentId: string): Promi
     return { success: false, error: 'ID de reservación no proporcionado.' };
   }
 
-  // Get enrollment record
-  const enrollment = await db.query.classEnrollments.findFirst({
-    where: eq(classEnrollments.id, enrollmentId),
-  });
+  // Get enrollment + verify ownership in a single query (IDOR guard / CWE-639)
+  const enrollmentRow = await db
+    .select({ enrollment: classEnrollments, userSubscription: userSubscriptions })
+    .from(classEnrollments)
+    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+    .where(eq(classEnrollments.id, enrollmentId))
+    .then((rows) => rows[0] ?? null);
 
-  if (!enrollment) {
+  if (!enrollmentRow) {
     return { success: false, error: 'Reservación no encontrada.' };
   }
+
+  // The enrollment must belong to the authenticated user.
+  if (enrollmentRow.userSubscription.userId !== session.sub) {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  const enrollment = enrollmentRow.enrollment;
 
   // Block for non-pending enrollments
   if (enrollment.status !== 'pending') {

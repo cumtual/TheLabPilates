@@ -735,14 +735,24 @@ export async function cancelReservationWithGuestAction(
     return { success: false, error: 'ID de reservación no proporcionado.' };
   }
 
-  // Get the titular enrollment
-  const enrollment = await db.query.classEnrollments.findFirst({
-    where: eq(classEnrollments.id, enrollmentId),
-  });
+  // Get the titular enrollment + verify ownership in a single query (IDOR guard / CWE-639)
+  const enrollmentRow = await db
+    .select({ enrollment: classEnrollments, userSubscription: userSubscriptions })
+    .from(classEnrollments)
+    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+    .where(eq(classEnrollments.id, enrollmentId))
+    .then((rows) => rows[0] ?? null);
 
-  if (!enrollment) {
+  if (!enrollmentRow) {
     return { success: false, error: 'Reservación no encontrada.' };
   }
+
+  // The enrollment must belong to the authenticated user.
+  if (enrollmentRow.userSubscription.userId !== session.sub) {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  const enrollment = enrollmentRow.enrollment;
 
   if (enrollment.status !== 'pending') {
     return { success: false, error: 'Solo puedes cancelar reservaciones pendientes.' };
@@ -849,14 +859,24 @@ export async function confirmLateCancelBothAction(
     return { success: false, error: 'ID de reservación no proporcionado.' };
   }
 
-  // Get the titular enrollment
-  const enrollment = await db.query.classEnrollments.findFirst({
-    where: eq(classEnrollments.id, enrollmentId),
-  });
+  // Get the titular enrollment + verify ownership in a single query (IDOR guard / CWE-639)
+  const enrollmentRow = await db
+    .select({ enrollment: classEnrollments, userSubscription: userSubscriptions })
+    .from(classEnrollments)
+    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
+    .where(eq(classEnrollments.id, enrollmentId))
+    .then((rows) => rows[0] ?? null);
 
-  if (!enrollment) {
+  if (!enrollmentRow) {
     return { success: false, error: 'Reservación no encontrada.' };
   }
+
+  // The enrollment must belong to the authenticated user.
+  if (enrollmentRow.userSubscription.userId !== session.sub) {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  const enrollment = enrollmentRow.enrollment;
 
   if (enrollment.status !== 'pending') {
     return { success: false, error: 'Solo puedes cancelar reservaciones pendientes.' };

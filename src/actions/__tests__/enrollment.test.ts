@@ -479,6 +479,15 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
                 values: vi.fn().mockResolvedValue(undefined),
               }),
               execute: vi.fn().mockResolvedValue(undefined),
+              // Duplicate re-check inside the transaction: tx.select().from().innerJoin().where()
+              select: vi.fn().mockReturnValue({
+                from: vi.fn().mockReturnValue({
+                  innerJoin: vi.fn().mockReturnValue({
+                    where: vi.fn().mockResolvedValue([]),
+                  }),
+                }),
+              }),
+              rollback: vi.fn(),
             };
             await cb(mockTx);
             txInsertCalled = mockTx.insert.mock.calls.length > 0;

@@ -119,6 +119,15 @@ function createMockTransaction() {
           where: vi.fn().mockResolvedValue(undefined),
         }),
       }),
+      // Duplicate re-check inside the transaction: tx.select().from().innerJoin().where()
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      rollback: vi.fn(),
     };
     await cb(mockTx);
     return undefined;
@@ -130,9 +139,16 @@ function createMockTransaction() {
  * The enrollment action uses raw SQL like:
  *   `UPDATE user_suscriptions SET days_remaining = days_remaining - 1 ...`
  *   `UPDATE user_suscriptions SET days_remaining = days_remaining + 1 ...`
+ *
+ * The `SELECT ... FOR UPDATE` row lock also goes through execute(), so this
+ * helper inspects the SQL template text and only counts credit modifications.
  */
 function wasDaysRemainingModified(): boolean {
-  return transactionExecuteCalls.length > 0;
+  return transactionExecuteCalls.some((call) => {
+    const sqlObj = (call as unknown[])[0] as { args?: unknown[] } | undefined;
+    const strings = sqlObj?.args?.[0];
+    return Array.isArray(strings) && strings.join('').includes('days_remaining');
+  });
 }
 
 // ─── Property Tests ────────────────────────────────────────────────────────────
@@ -173,7 +189,6 @@ describe('Property 18: Invariante de days_remaining para Open Lab', () => {
 
             // Mock db.select() for fetching user subscription
             // Returns an Open Lab subscription (guest = true) with confirmed payment
-            const selectFromMock = vi.fn();
             const joinChain = {
               leftJoin: vi.fn().mockReturnThis(),
               where: vi.fn().mockResolvedValue([
@@ -390,13 +405,24 @@ describe('Property 18: Invariante de days_remaining para Open Lab', () => {
               email: 'openlab@test.com',
             });
 
-            // Mock enrollment
-            (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-              id: enrollmentId,
-              openClassId: 'class-1',
-              userSubscriptionId: userSubId,
-              status: 'pending',
-              createdAt: new Date(),
+            // Enrollment + ownership (belongs to the session user)
+            (db.select as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+              from: vi.fn().mockReturnValue({
+                innerJoin: vi.fn().mockReturnValue({
+                  where: vi.fn().mockResolvedValue([
+                    {
+                      enrollment: {
+                        id: enrollmentId,
+                        openClassId: 'class-1',
+                        userSubscriptionId: userSubId,
+                        status: 'pending',
+                        createdAt: new Date(),
+                      },
+                      userSubscription: { id: userSubId, userId },
+                    },
+                  ]),
+                }),
+              }),
             });
 
             // Mock subscription check (Open Lab = guest: true)
@@ -474,13 +500,24 @@ describe('Property 18: Invariante de days_remaining para Open Lab', () => {
               email: 'openlab@test.com',
             });
 
-            // Mock enrollment
-            (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-              id: enrollmentId,
-              openClassId: 'class-1',
-              userSubscriptionId: userSubId,
-              status: 'pending',
-              createdAt: new Date(),
+            // Enrollment + ownership (belongs to the session user)
+            (db.select as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+              from: vi.fn().mockReturnValue({
+                innerJoin: vi.fn().mockReturnValue({
+                  where: vi.fn().mockResolvedValue([
+                    {
+                      enrollment: {
+                        id: enrollmentId,
+                        openClassId: 'class-1',
+                        userSubscriptionId: userSubId,
+                        status: 'pending',
+                        createdAt: new Date(),
+                      },
+                      userSubscription: { id: userSubId, userId },
+                    },
+                  ]),
+                }),
+              }),
             });
 
             // Mock subscription check (Open Lab)
@@ -658,13 +695,24 @@ describe('Property 18: Invariante de days_remaining para Open Lab', () => {
               email: 'regular@test.com',
             });
 
-            // Mock enrollment
-            (db.query.classEnrollments.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-              id: enrollmentId,
-              openClassId: 'class-1',
-              userSubscriptionId: userSubId,
-              status: 'pending',
-              createdAt: new Date(),
+            // Enrollment + ownership (belongs to the session user)
+            (db.select as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+              from: vi.fn().mockReturnValue({
+                innerJoin: vi.fn().mockReturnValue({
+                  where: vi.fn().mockResolvedValue([
+                    {
+                      enrollment: {
+                        id: enrollmentId,
+                        openClassId: 'class-1',
+                        userSubscriptionId: userSubId,
+                        status: 'pending',
+                        createdAt: new Date(),
+                      },
+                      userSubscription: { id: userSubId, userId },
+                    },
+                  ]),
+                }),
+              }),
             });
 
             // Non-Open Lab subscription (guest = false)
