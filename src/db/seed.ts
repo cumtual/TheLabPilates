@@ -114,7 +114,7 @@ async function seed() {
     name: 'Lab Pass',
     sessions: 1,
     guest: false,
-    price: 120,
+    price: 95,
   }).returning();
 
   const [labEntry] = await db.insert(schema.subscriptions).values({
@@ -122,7 +122,7 @@ async function seed() {
     name: 'Lab Entry',
     sessions: 4,
     guest: false,
-    price: 460,
+    price: 360,
   }).returning();
 
   const [labPractice] = await db.insert(schema.subscriptions).values({
@@ -130,7 +130,7 @@ async function seed() {
     name: 'Lab Practice',
     sessions: 8,
     guest: false,
-    price: 880,
+    price: 680,
   }).returning();
 
   const [labProgress] = await db.insert(schema.subscriptions).values({
@@ -138,7 +138,7 @@ async function seed() {
     name: 'Lab Progress',
     sessions: 12,
     guest: false,
-    price: 1260,
+    price: 960,
   }).returning();
 
   const [openLab] = await db.insert(schema.subscriptions).values({
@@ -146,7 +146,7 @@ async function seed() {
     name: 'Open Lab',
     sessions: 30,
     guest: true,
-    price: 2850,
+    price: 1850,
   }).returning();
 
   console.log(`   ✓ ${labPass.name} - $${labPass.price}`);
