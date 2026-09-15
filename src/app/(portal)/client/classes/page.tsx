@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
 import { openClasses, classEnrollments, guestEnrollments, users } from '@/db/schema';
-import { eq, count, and, gt, notInArray } from 'drizzle-orm';
+import { eq, count, and, gt, notInArray, isNull } from 'drizzle-orm';
 import { ClassList, type ClassItem } from '@/components/client/ClassList';
 import { Pagination } from '@/components/ui/Pagination';
 
@@ -48,7 +48,8 @@ export default async function ClientClassesPage({
       .where(
         and(
           eq(openClasses.status, 'scheduled'),
-          gt(openClasses.classDate, now)
+          gt(openClasses.classDate, now),
+          isNull(openClasses.specialEventId)
         )
       )
       .groupBy(openClasses.id, users.username)

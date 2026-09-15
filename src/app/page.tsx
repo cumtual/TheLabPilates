@@ -5,6 +5,7 @@ import MatPilatesInfo from "@/components/sections/MatPilatesInfo";
 import Barre from "@/components/sections/Barre";
 import HathaYoga from "@/components/sections/HathaYoga";
 import Pricing from "@/components/sections/Pricing";
+import SpecialEvent from "@/components/sections/SpecialEvent";
 import MembershipBenefits from "@/components/sections/MembershipBenefits";
 import Schedule from "@/components/sections/Schedule";
 import Location from "@/components/sections/Location";
@@ -49,6 +50,7 @@ export default function Home() {
         <Barre />
         <HathaYoga />
         <Pricing />
+        <SpecialEvent />
         <MembershipBenefits />
         <Schedule />
         <Location />

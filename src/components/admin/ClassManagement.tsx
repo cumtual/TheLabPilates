@@ -36,6 +36,7 @@ interface ClassManagementProps {
 }
 
 type StatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
+type ClassTypeFilter = 'all' | 'barre' | 'mat_pilates' | 'yoga' | 'personalizada';
 
 const statusLabels: Record<string, string> = {
   scheduled: 'Programada',
@@ -54,6 +55,14 @@ const filterLabels: Record<StatusFilter, string> = {
   scheduled: 'Programadas',
   completed: 'Completadas',
   cancelled: 'Canceladas',
+};
+
+const typeFilterLabels: Record<ClassTypeFilter, string> = {
+  all: 'Todos los tipos',
+  barre: 'Barre',
+  mat_pilates: 'Mat Pilates',
+  yoga: 'Yoga',
+  personalizada: 'Personalizada',
 };
 
 const enrollmentStatusLabels: Record<string, string> = {
@@ -77,13 +86,18 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<ClassTypeFilter>('all');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [clientPage, setClientPage] = useState(1);
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
 
-  const filteredClasses = filter === 'all'
+  // Status and class-type filters combine (AND).
+  const statusFiltered = filter === 'all'
     ? classes
     : classes.filter((cls) => cls.status === filter);
+  const filteredClasses = typeFilter === 'all'
+    ? statusFiltered
+    : statusFiltered.filter((cls) => cls.classType === typeFilter);
 
   const totalClientPages = Math.ceil(filteredClasses.length / CLIENT_PAGE_SIZE);
   const paginatedClasses = filteredClasses.slice(
@@ -99,6 +113,15 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
     scheduled: classes.filter((c) => c.status === 'scheduled').length,
     completed: classes.filter((c) => c.status === 'completed').length,
     cancelled: classes.filter((c) => c.status === 'cancelled').length,
+  };
+
+  // Type counts reflect the current status filter so the numbers match the visible list.
+  const typeCounts: Record<ClassTypeFilter, number> = {
+    all: statusFiltered.length,
+    barre: statusFiltered.filter((c) => c.classType === 'barre').length,
+    mat_pilates: statusFiltered.filter((c) => c.classType === 'mat_pilates').length,
+    yoga: statusFiltered.filter((c) => c.classType === 'yoga').length,
+    personalizada: statusFiltered.filter((c) => c.classType === 'personalizada').length,
   };
 
   function handleCancel(classId: string) {
@@ -123,7 +146,7 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
 
   return (
     <div className="space-y-4">
-      {/* Filtros */}
+      {/* Filtros por estatus */}
       <div className="flex flex-wrap gap-2">
         {(Object.keys(filterLabels) as StatusFilter[]).map((key) => (
           <button
@@ -148,6 +171,32 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
         ))}
       </div>
 
+      {/* Filtros por tipo de clase (combinan con el estatus) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-body text-sm font-medium text-outline mr-1">Tipo:</span>
+        {(Object.keys(typeFilterLabels) as ClassTypeFilter[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => { setTypeFilter(key); setClientPage(1); }}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 min-h-11 rounded-lg font-body text-sm font-medium transition-colors ${
+              typeFilter === key
+                ? 'bg-secondary text-on-primary'
+                : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high'
+            }`}
+          >
+            {typeFilterLabels[key]}
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+              typeFilter === key
+                ? 'bg-on-primary/20 text-on-primary'
+                : 'bg-outline-variant/30 text-outline'
+            }`}>
+              {typeCounts[key]}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {message && (
         <div
           className={`p-3 rounded-lg text-sm ${
@@ -163,7 +212,9 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
 
       {filteredClasses.length === 0 ? (
         <p className="text-center text-on-surface-variant py-8 font-body">
-          {filter === 'all' ? 'No hay clases registradas.' : `No hay clases ${filterLabels[filter].toLowerCase()}.`}
+          {filter === 'all' && typeFilter === 'all'
+            ? 'No hay clases registradas.'
+            : 'No hay clases que coincidan con los filtros seleccionados.'}
         </p>
       ) : (
         <div className="space-y-3">

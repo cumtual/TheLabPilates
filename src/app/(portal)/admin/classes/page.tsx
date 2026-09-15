@@ -1,4 +1,4 @@
-import { desc, eq, notInArray } from 'drizzle-orm';
+import { desc, eq, notInArray, isNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { openClasses, classEnrollments, users, userSubscriptions, guestEnrollments } from '@/db/schema';
 import ClassManagement from '@/components/admin/ClassManagement';
@@ -22,6 +22,7 @@ export default async function AdminClassesPage() {
     })
     .from(openClasses)
     .leftJoin(users, eq(openClasses.coachUserId, users.id))
+    .where(isNull(openClasses.specialEventId))
     .orderBy(desc(openClasses.classDate));
 
   // Fetch all enrollments with student info (excluding cancelled)

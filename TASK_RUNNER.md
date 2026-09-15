@@ -304,3 +304,602 @@ pnpm build
 - `pnpm exec vitest run` → **51 archivos / 423 tests pasando**.
 - `pnpm lint` (archivos tocados) → 0 errores; 1 warning preexistente en `guest.ts:15` (`consumeGuestCredit`).
 - `pnpm build` → **Compiled successfully**.
+
+---
+
+# TASK_RUNNER — Feature: Eventos Especiales
+
+**Estado:** ✅ Ejecutado
+**Migración:** `drizzle/0004_keen_lake.sql` — aplicada directamente en Supabase (la DB no usa
+tracking de drizzle; se creó con `db:push`). SQL 100% aditivo, sin cambios a datos existentes.
+**Verificación:** `tsc` 0 errores · `pnpm test` 444/444 · `pnpm build` exitoso · eslint limpio en
+todos los archivos del feature.
+**Stack:** Next.js 16 (App Router) + Drizzle ORM + Postgres + Tailwind 4. Sin i18n (español hardcodeado).
+**Convenciones:** server actions en `src/actions/`, `Modal` en `src/components/ui/Modal.tsx`,
+timezone `America/Mexico_City` vía `src/lib/utils/date.ts`, precios `integer` MXN.
+
+**Decisiones confirmadas:**
+- Descuentos = **monto fijo MXN** (`discount_amount`) por tipo de membresía; sin fila → precio base.
+- **Solo 1 evento activo a la vez** (la landing muestra ese único evento).
+- Reembolsos con **estados en panel** (`refund_pending` → `refunded`).
+- CTA de landing **"Reservar lugar" → `/login`**.
+
+**Orden de ejecución estricto:**
+`DB-01 → DB-02 → BE-01 → BE-02 → BE-03 → BE-04 → ISO-01 → UI-01 → UI-02 → UI-03 → UI-04 → TEST-01 → VERIFY-01`.
+
+---
+
+## TASK-DB-01 — Schema Drizzle: tablas de eventos
+
+- **Archivo:** `src/db/schema.ts` (modificar), `src/db/relations.ts` (modificar)
+- **Contexto:** schema.ts imports L1-10, tabla `openClasses` L111-124, final del archivo.
+- **Instrucción:**
+  1. Agregar `text` al import de `drizzle-orm/pg-core`.
+  2. Agregar enums `specialEventStatusEnum` (`active`, `cancelled`, `completed`) y
+     `eventRegistrationStatusEnum` (`pending`, `confirmed`, `refund_pending`, `refunded`), y las tablas
+     `specialEvents`, `specialEventDiscounts`, `specialEventRegistrations` (DDL de referencia
+     más abajo, en esta misma tarea).
+  3. En `openClasses` agregar la columna nullable `specialEventId` con FK a `specialEvents`
+     (`onDelete`/`onUpdate` cascade). `NULL` = clase normal del catálogo.
+  4. En relations.ts: agregar `specialEventsRelations`, `specialEventDiscountsRelations`,
+     `specialEventRegistrationsRelations`; extender `openClassesRelations` con
+     `specialEvent: one(specialEvents, { fields: [openClasses.specialEventId], references: [specialEvents.id] })`.
+- **DDL de referencia:**
+  ```ts
+  export const specialEventStatusEnum = pgEnum('special_event_status', [
+    'active', 'cancelled', 'completed',
+  ]);
+  export const eventRegistrationStatusEnum = pgEnum('event_registration_status', [
+    'pending', 'confirmed', 'refund_pending', 'refunded',
+  ]);
+
+  export const specialEvents = pgTable('special_events', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    title: varchar('title', { length: 120 }).notNull(),
+    description: text('description').notNull(),
+    shortDescription: varchar('short_description', { length: 150 }).notNull(),
+    price: integer('price').notNull(),
+    startDate: timestamp('start_date', { withTimezone: true }).notNull(),
+    endDate: timestamp('end_date', { withTimezone: true }).notNull(),
+    status: specialEventStatusEnum('status').notNull().default('active'),
+    showOnLanding: boolean('show_on_landing').notNull().default(true),
+    createdById: uuid('created_by_id').notNull()
+      .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  });
+
+  // En openClasses:
+  specialEventId: uuid('special_event_id')
+    .references(() => specialEvents.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+
+  export const specialEventDiscounts = pgTable(
+    'special_event_discounts',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      specialEventId: uuid('special_event_id').notNull()
+        .references(() => specialEvents.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+      subscriptionId: uuid('subscription_id').notNull()
+        .references(() => subscriptions.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+      discountAmount: integer('discount_amount').notNull(),
+    },
+    (t) => ({
+      uniqueDiscount: uniqueIndex('uk_event_discount_subscription')
+        .on(t.specialEventId, t.subscriptionId),
+    })
+  );
+
+  export const specialEventRegistrations = pgTable(
+    'special_event_registrations',
+    {
+      id: uuid('id').primaryKey().defaultRandom(),
+      specialEventId: uuid('special_event_id').notNull()
+        .references(() => specialEvents.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+      userId: uuid('user_id').notNull()
+        .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+      openClassId: uuid('open_class_id').notNull()
+        .references(() => openClasses.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+      paymentId: uuid('payment_id').notNull().unique()
+        .references(() => payments.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+      amountPaid: integer('amount_paid').notNull(),
+      status: eventRegistrationStatusEnum('status').notNull().default('pending'),
+      createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    },
+    (t) => ({
+      uniquePurchase: uniqueIndex('uk_event_user_registration')
+        .on(t.specialEventId, t.userId),
+    })
+  );
+  ```
+- **Prevención de regresiones:** NO modificar ninguna columna existente; `specialEventId` nullable sin default.
+- **Verificación:** `pnpm lint` y `pnpm build` (typecheck de schema).
+
+## TASK-DB-02 — Migración
+
+- **Archivo:** `drizzle/0004_*.sql` (generado)
+- **Instrucción:** ejecutar `pnpm db:generate`. Inspeccionar el SQL: debe contener CREATE TABLE
+  `special_events` / `special_event_discounts` / `special_event_registrations`,
+  `ALTER TABLE open_class ADD COLUMN special_event_id`, 2 `CREATE TYPE ... AS ENUM`,
+  2 `CREATE UNIQUE INDEX`. **NO ejecutar `db:migrate` ni `db:push`** (lo hará el usuario).
+- **Verificación:** existe el SQL generado con los 7 objetos anteriores.
+
+## TASK-BE-01 — Librería de capacidad y precio de eventos
+
+- **Archivo:** `src/lib/events/capacity.ts` (crear)
+- **Contexto:** replicar el patrón de `src/lib/guest/capacity.ts:17-62` (firma con `conn` opcional para correr dentro de tx).
+- **Instrucción:**
+  - `getEventClassOccupied(openClassId, conn?)`: COUNT de `specialEventRegistrations`
+    (`openClassId`, `status='confirmed'`) + COUNT de `guestEnrollments` activos (misma exclusión
+    `cancelled`/`late_cancelled` que capacity.ts).
+  - `getEventClassAvailable(openClassId, conn?)`: `capacity - occupied` (leer `capacity` de `open_class`).
+  - `computeEventPrice(event, userId)`: buscar la `userSubscription` activa del usuario
+    (`active=true, status='active'`, pago confirmado — mismo criterio que
+    `src/lib/guest/eligibility.ts:20-69`), buscar descuento por su `subscriptionId`; retornar
+    `max(0, price - discountAmount)`. Sin suscripción → precio base.
+- **Prevención:** NO tocar `src/lib/guest/capacity.ts`. Los `pending` NO restan cupo.
+- **Verificación:** `pnpm vitest run src/lib` + `pnpm build`.
+
+## TASK-BE-02 — Email de cancelación de evento
+
+- **Archivo:** `src/lib/email/service.ts` (modificar)
+- **Contexto:** patrón de `sendClassCancellationEmail` (L76-95) y `sendEmail` con reintentos (L21-56).
+- **Instrucción:** `sendSpecialEventCancellationEmail(recipients: string[], event: { title, startDate })`:
+  asunto "Evento cancelado: {title}"; cuerpo informa cancelación por causas externas al estudio y
+  que el reembolso se procesará de forma manual. Usar `formatFullDateTime` de `@/lib/utils/date`.
+- **Verificación:** `pnpm build`.
+
+## TASK-BE-03 — Server actions admin de eventos
+
+- **Archivo:** `src/actions/admin-events.ts` (crear)
+- **Contexto:** validación de sesión/rol como `admin.ts` (inicio de `confirmPaymentAction` L161-190);
+  creación de clase como `adminCreateClassAction` (admin.ts:476-554); lock como
+  `enrollment.ts:117-160`; borrado de pago como `rejectPaymentAction` (admin.ts:557-608).
+- **Instrucción — implementar:**
+  1. `createSpecialEventAction(formData)`: rol admin; validar `title` ≤120, `description`,
+     `shortDescription` ≤150, `price` int >0, `startDate < endDate` (America/Mexico_City),
+     descuentos opcionales `[{subscriptionId, discountAmount>=0}]` (rechazar
+     `discountAmount > price`). **REGLA:** rechazar si ya existe otro evento con `status='active'`
+     (solo 1 activo). Insertar evento + descuentos en una tx. `revalidatePath('/')`.
+  2. `addEventClassAction(eventId, formData)`: mismas validaciones que `adminCreateClassAction`
+     (fecha futura CDMX, capacity 1-20, tipo válido, `customName` si personalizada, coach con rol
+     coach/admin) + el evento debe estar `active`. Insertar `open_class` con `specialEventId=eventId`.
+  3. `toggleEventLandingAction(eventId, show: boolean)`: update `showOnLanding`; `revalidatePath('/')`.
+  4. `completeSpecialEventAction(eventId)`: `status='completed'`; `revalidatePath('/')`.
+  5. `cancelSpecialEventAction(eventId)`: tx → evento `status='cancelled'`; todas sus `open_class`
+     `status='cancelled'`; registrations `confirmed` → `refund_pending`; las `pending` se mantienen
+     (admin decide rechazarlas). Tras commit: recolectar emails de usuarios con registrations
+     `confirmed`/`pending` y fire-and-forget `sendSpecialEventCancellationEmail`. `revalidatePath('/')`.
+  6. `confirmEventPaymentAction(registrationId)`: tx con
+     `SELECT id FROM open_class WHERE id = ${reg.openClassId} FOR UPDATE`;
+     check `getEventClassAvailable(classId, tx) >= 1` → si 0, rollback con error
+     `'La clase seleccionada está llena. Rechaza el pago.'`; update `payments` `confirmed=true` +
+     `dateConfirmed`; update registration `status='confirmed'`. Revalidar ruta admin del evento.
+  7. `rejectEventPaymentAction(registrationId)`: borrar `registration` y luego `payment`
+     (el `paymentId` unique FK cascadea); enviar `sendPaymentRejectedEmail` existente. Esto libera
+     la compra única para reintento.
+  8. `markRefundedAction(registrationId)`: solo si `status='refund_pending'` → `'refunded'`.
+- **Prevención:** todas las actions validan `session.role === 'admin'`; NUNCA insertar en
+  `classEnrollments`; NO modificar `admin.ts` existente.
+- **Verificación:** `pnpm build` + tests de TASK-TEST-01.
+
+## TASK-BE-04 — Server action de compra (cliente)
+
+- **Archivo:** `src/actions/event.ts` (crear)
+- **Contexto:** patrón de `purchaseSubscriptionAction` (`subscription.ts:9-96`).
+- **Instrucción — `purchaseSpecialEventAction(eventId, classId, paymentType: 'transfer'|'cash', acceptedNoRefund: boolean)`:**
+  1. Sesión rol `client`. `acceptedNoRefund === true` obligatorio (disclaimer legal).
+  2. Evento existe y `status='active'`.
+  3. No existe registration previa del usuario para ese evento (check en aplicación; el unique index
+     `uk_event_user_registration` es la red de seguridad — capturar error 23505 y responder
+     `'Ya adquiriste este evento.'`).
+  4. Clase: pertenece al evento (`specialEventId=eventId`), `status='scheduled'`,
+     `getEventClassAvailable(classId) >= 1` (informativo; el cupo real se valida al aprobar).
+  5. `amountPaid = await computeEventPrice(event, session.sub)`.
+  6. Tx: insert `payments {paymentType, confirmed:false}` → insert `registration`
+     `{eventId, userId, openClassId: classId, paymentId, amountPaid, status:'pending'}`.
+  7. **NO** guests, **NO** `classEnrollments`, **NO** descuento de `days_remaining`.
+- **Prevención:** el componente NO debe exponer toggle de invitados (las clases de evento nunca
+  pasan por `EnrollWithGuestSection`).
+- **Verificación:** `pnpm build` + tests de TASK-TEST-01.
+
+## TASK-ISO-01 — Aislamiento: excluir clases de evento de listados normales
+
+- **Archivos (agregar `isNull(openClasses.specialEventId)` al `where` de cada query):**
+  1. `src/app/(portal)/client/classes/page.tsx:31-55` — catálogo cliente.
+  2. `src/components/sections/Schedule.tsx:32-50` — landing schedule.
+  3. `src/app/(portal)/admin/classes/page.tsx:12-25` — gestión de clases admin.
+  4. `src/app/(portal)/admin/page.tsx:19-26` — contador dashboard admin.
+  5. `src/lib/queries/coach.ts:8-23` — agenda del coach.
+- **NO tocar:** `src/lib/queries/class-auto-completion.ts` (las clases de evento SÍ deben
+  auto-completarse) ni `getNextClass` en `client/page.tsx` (las registrations no generan
+  `classEnrollments`, no hay fuga).
+- **Verificación:** `pnpm build`; grep sobre queries de `openClasses` con `specialEventId` para
+  confirmar que las restantes son intencionales (solo las del feature).
+
+## TASK-UI-01 — Admin: lista y creación de eventos
+
+- **Archivos:** `src/app/(portal)/admin/events/page.tsx` (crear),
+  `src/components/admin/SpecialEventList.tsx` (crear),
+  `src/components/admin/CreateSpecialEventForm.tsx` (crear),
+  `src/components/layout/PortalNav.tsx:29-43` (modificar)
+- **Contexto:** patrón de form+`Modal` de `AdminCreateClassForm.tsx` (Modal L205-241).
+- **Instrucción:** agregar item nav admin
+  `{ label: 'Eventos', href: '/admin/events', icon: 'event' }`. La página server lista eventos
+  (más reciente primero) con badge de status. Botón "Crear Evento Especial" → form con: `title`,
+  `description` (textarea), `shortDescription` (contador 150 chars), `price`, `startDate`,
+  `endDate`, matriz de descuentos (una fila por cada `subscriptions`: input MXN opcional),
+  checkbox `showOnLanding` (default true). Submit → Modal "¿Publicar evento?" →
+  `createSpecialEventAction`. Si ya hay evento activo, mostrar alerta y deshabilitar el botón.
+- **Verificación:** `pnpm lint` + `pnpm build`.
+
+## TASK-UI-02 — Admin: detalle del evento (clases, inscritos, pagos, invitados, cancelar)
+
+- **Archivos:** `src/app/(portal)/admin/events/[eventId]/page.tsx` (crear),
+  `src/components/admin/EventClassPanel.tsx` (crear),
+  `src/components/admin/EventRegistrationTable.tsx` (crear)
+- **Contexto:** agregar clase = reutilizar campos/validaciones de `AdminCreateClassForm` pero llamando
+  `addEventClassAction`; invitados = **REUSAR** `AdminAddGuestForm`/`AdminRemoveGuestButton`
+  (`src/components/admin/`) apuntando al `openClassId` de la clase del evento (la action
+  `adminAddGuestAction` ya funciona tal cual); aprobación = patrón `PaymentManagement.tsx` (L315-359).
+- **Instrucción:** por cada clase del evento: header con fecha/tipo/coach + `"N/M lugares"`
+  (`getEventClassOccupied`) + botón "Agregar Clase" (si evento activo) + tabla de inscritos
+  (usuario, monto, tipo de pago, status) con botones Confirmar (`confirmEventPaymentAction`,
+  mostrar error si clase llena) y Rechazar (Modal danger → `rejectEventPaymentAction`) + sección de
+  invitados admin. Si `status='refund_pending'`, botón "Marcar reembolsado". Header del evento:
+  toggle `showOnLanding`, botón "Finalizar evento" (Modal → `completeSpecialEventAction`),
+  botón "Cancelar evento" (**Modal `variant='danger'` OBLIGATORIO** con texto que advierte que se
+  notificará a inscritos y se procesarán reembolsos → `cancelSpecialEventAction`).
+- **Verificación:** `pnpm lint` + `pnpm build`.
+
+## TASK-UI-03 — Cliente: sección Eventos, banner y compra
+
+- **Archivos:** `src/app/(portal)/client/events/page.tsx` (crear),
+  `src/components/client/SpecialEventPurchase.tsx` (crear),
+  `src/components/client/EventReservationCard.tsx` (crear),
+  `src/components/layout/PortalNav.tsx:21-28` (modificar),
+  `src/app/(portal)/client/page.tsx` (modificar — banner)
+- **Contexto:** card de reserva = copiar estilo del card "Próxima Clase"
+  (`client/page.tsx:171-196`: `<Card className="border-primary/30 bg-primary/5">` + `Badge`);
+  modal de pago y datos bancarios = patrón de `SubscriptionCard.tsx` (Modal L186-209, bank info
+  L95-111; la debit card activa se consulta en el server component como
+  `subscription/page.tsx:21-26`).
+- **Instrucción:**
+  - Nav cliente: agregar `{ label: 'Eventos', href: '/client/events', icon: 'event' }`.
+  - Dashboard: si hay evento activo y el usuario NO tiene registration → banner/alerta
+    "Evento Especial Disponible" con link a `/client/events`.
+  - `/client/events` (server): sin evento activo → empty state. Con evento:
+    - **SIN** registration: detalles, precio con descuento aplicado (`computeEventPrice`; mostrar
+      precio base tachado si hay descuento), selector de clase (radio) mostrando
+      "N lugares disponibles" por clase (deshabilitar las de 0), botones Transferencia/Efectivo,
+      checkbox OBLIGATORIO "Entiendo que esta compra es definitiva y no aplica cancelación ni
+      devolución" (deshabilitar submit hasta aceptarlo), Modal de confirmación →
+      `purchaseSpecialEventAction`. Si transferencia: mostrar datos de `debit_card` activa tras éxito.
+    - **CON** registration: descripción del evento + `EventReservationCard` (estilo Próxima Clase)
+      con clase elegida, fecha, monto y `Badge` de estado: "Pago pendiente de confirmación" /
+      "Reserva confirmada" / "Reembolso en proceso" / "Reembolsado". Sin opción de recomprar ni cancelar.
+- **Verificación:** `pnpm lint` + `pnpm build`.
+
+## TASK-UI-04 — Landing: sección de Evento Especial
+
+- **Archivos:** `src/components/sections/SpecialEvent.tsx` (crear), `src/app/page.tsx` (modificar)
+- **Contexto:** patrón de `Schedule.tsx` (server component async con query Drizzle directa, único
+  precedente de sección dinámica en `sections/`). Orden actual de secciones en `page.tsx` L44-56:
+  Hero → Philosophy → MatPilatesInfo → Barre → HathaYoga → Pricing → MembershipBenefits →
+  Schedule → Location.
+
+- **Ubicación:** insertar `<SpecialEvent />` inmediatamente **DESPUÉS de `<Pricing />`** y
+  **ANTES de `<MembershipBenefits />`**.
+
+- **Comportamiento condicional estricto:**
+  - Query: `findFirst special_events WHERE status='active' AND showOnLanding=true ORDER BY startDate ASC`.
+  - Si NO hay evento activo → `return null` desde el server component. La sección **no debe existir
+    en el DOM**: sin wrapper, sin `<section>` vacío, sin márgenes ni paddings huérfanos. El flujo
+    visual debe ser como si el espacio no existiera (Pricing seguido directo de MembershipBenefits).
+  - La ISR existente (`revalidate=300` en `page.tsx` L15) + los `revalidatePath('/')` de las actions
+    de TASK-BE-03 garantizan que la sección aparezca/desaparezca sola.
+
+- **Estructura y contenido visual (respetando el diseño de la landing):**
+  1. Tag / Badge: **"Evento Especial"** (usar `Badge` de `@/components/ui/Badge` o el estilo de
+     etiqueta que ya usen las secciones de la landing).
+  2. **Nombre** del evento (`title`).
+  3. **Descripción** del evento (`shortDescription`, máx. 150 chars — la variante de landing).
+  4. **Fecha** del evento (`startDate`–`endDate`, formato `America/Mexico_City` vía
+     `src/lib/utils/date.ts`; si start y end son el mismo día, mostrar fecha única).
+  5. **Clases y cupos disponibles:**
+     - Query de `open_class WHERE specialEventId = evento.id AND status='scheduled' ORDER BY classDate ASC`,
+       con coach (`join users`).
+     - Por cada clase: nombre (`getClassDisplayName` de `@/lib/utils/class-type`, o `customName` si
+       personalizada), horario (formato **12h A.M./P.M.**, igual que `Schedule.tsx` — prohibido
+       `getHours()` y formato 24h).
+     - Indicador de cupos por clase:
+       `disponibles = capacity - (registrations status='confirmed' + guestEnrollments activos)`,
+       reutilizando la lógica de TASK-BE-01 (`src/lib/events/capacity.ts`). Mostrar
+       "N lugares disponibles"; si `disponibles = 0` → tag **"SOLD OUT"** (mismo tratamiento visual
+       que `Schedule`).
+  6. CTA **"Reservar lugar" → `/login`** (el middleware redirige al usuario autenticado a su portal;
+     el no autenticado inicia sesión y desde ahí accede a `/client/events`).
+
+- **Prevención de regresiones:**
+  - NO modificar `Pricing.tsx` ni `MembershipBenefits.tsx`; solo insertar el componente en `page.tsx`.
+  - La sección es server component puro (sin `'use client'`); si se necesita interactividad mínima,
+    extraer un client component hijo como hace `Schedule`/`ScheduleClient`.
+  - Verificar con evento inactivo que no queda NINGÚN nodo en el DOM (inspeccionar HTML).
+
+- **Verificación:** `pnpm build`; revisión visual con `pnpm dev` en ambos estados (con y sin evento activo).
+
+## TASK-TEST-01 — Tests unitarios
+
+- **Archivos:** `src/lib/events/__tests__/capacity.test.ts` (crear),
+  `src/actions/__tests__/admin-events.test.ts` (crear),
+  `src/actions/__tests__/event-purchase.test.ts` (crear)
+- **Contexto:** seguir el setup de `src/actions/__tests__/enrollment.test.ts` y
+  `src/lib/guest/__tests__/capacity.test.ts` (mocks de db).
+- **Instrucción — casos mínimos:**
+  1. `getEventClassAvailable`: confirmed + guests restan; pending NO resta.
+  2. `computeEventPrice`: con descuento / sin suscripción / descuento > price → 0.
+  3. Purchase: rechaza sin `acceptedNoRefund`; rechaza doble compra (23505); rechaza clase llena;
+     rechaza clase de otro evento; crea `payment confirmed=false` + registration `pending`.
+  4. `confirmEventPaymentAction`: confirma y descuenta cupo; falla con clase llena (rollback).
+  5. `cancelSpecialEventAction`: estados correctos + `confirmed` → `refund_pending`.
+  6. `createSpecialEventAction`: rechaza si ya hay evento activo.
+- **Verificación:** `pnpm vitest run`.
+
+## TASK-VERIFY-01 — Verificación final
+
+- **Archivo:** `package.json` (agregar `"test": "vitest run"` a scripts)
+- **Comandos (en orden, todos deben pasar):**
+  1. `pnpm lint`
+  2. `pnpm build`
+  3. `pnpm test`
+  4. Checklist manual de regresión:
+     - `/client/classes` NO lista clases de evento; landing `Schedule` tampoco.
+     - `/admin/classes` no mezcla clases de evento.
+     - Un usuario Open Lab no ve toggle de invitados en el flujo de evento.
+     - Comprar → cupo NO baja; admin confirma → cupo baja; admin rechaza → usuario puede recomprar.
+     - Cancelar evento → email enviado y registrations en `refund_pending`.
+
+---
+
+## Principios Críticos de Prevención de Regresiones
+
+1. **Aislamiento:** las clases de evento solo se excluyen con `isNull(specialEventId)` en 5 queries
+   (TASK-ISO-01). El auto-completado y `getNextClass` quedan intactos por diseño.
+2. **Invitados Open Lab:** imposible por estructura — el flujo de compra de evento no usa
+   `EnrollWithGuestSection` ni `enrollWithGuestAction`. El admin reutiliza `adminAddGuestAction`
+   sin cambios.
+3. **Cupo:** jamás se descuenta en la compra; solo en `confirmEventPaymentAction` con `FOR UPDATE`
+   (mismo patrón anti-overbooking ya probado en `enrollment.ts`).
+4. **Compra única:** doble candado — check en aplicación + unique index `(special_event_id, user_id)`;
+   el rechazo borra la fila para permitir reintento (consistente con el flujo actual de pagos).
+
+---
+
+## TASK-ADMIN-EVENTS-HISTORY-PAGINATION — Historial de Eventos Especiales (Admin)
+
+**Estado:** ✅ Ejecutado
+**Patrón a replicar:** `src/components/admin/ClassManagement.tsx` (chips de filtro + paginación
+client-side 10/página + filas expandibles) y `src/components/ui/Pagination.tsx`.
+**Decisiones confirmadas:**
+- El listado de eventos se unifica en un componente con tabs (Todos/Activos/Completados/Cancelados)
+  en `/admin/events`; se elimina `SpecialEventList.tsx`.
+- Detalle de asistentes por **expansión inline** (patrón ClassManagement), sin modal/drawer.
+- **NO se crea endpoint API**: se sigue el estándar server-component + paginación client-side.
+  La capa de datos vive en una query server (`src/lib/queries/events.ts`).
+
+### Archivos
+
+| Archivo | Cambio |
+|---|---|
+| `src/lib/queries/events.ts` | **Nuevo** — query server `getSpecialEventsHistory()` |
+| `src/components/admin/SpecialEventHistory.tsx` | **Nuevo** — client component del historial |
+| `src/app/(portal)/admin/events/page.tsx` | Modificar — consumir la query y renderizar el historial |
+| `src/components/admin/SpecialEventList.tsx` | Eliminar (reemplazado por el componente unificado) |
+| `src/lib/queries/__tests__/events-history.test.ts` | **Nuevo** — tests de orden y métricas |
+
+### Instrucción técnica
+
+**1. `src/lib/queries/events.ts` (nuevo):**
+- `getSpecialEventsHistory()`: eventos ordenados por `startDate DESC` con:
+  - Por evento: `id, title, startDate, endDate, status, price, classCount`,
+    `confirmedCount` (registrations `status='confirmed'`),
+    `revenue` = SUM(`amountPaid`) de registrations confirmadas.
+  - Por clase del evento: `id, classType, customName, classDate, coachName, capacity` +
+    `registrations[]` (`userName, userEmail, createdAt, paymentType, status, amountPaid`) +
+    `guests[]` (`guestName, origin, status, registeredByName`).
+- Queries Drizzle directas (patrón de `src/lib/queries/coach.ts`), agrupando en memoria con Maps
+  como hace `admin/classes/page.tsx`.
+
+**2. `src/components/admin/SpecialEventHistory.tsx` (nuevo, client):**
+- Props: `events: SpecialEventHistoryItem[]` (tipado exportado).
+- Chips de filtro replicando ClassManagement: `Todos / Activos / Completados / Cancelados`
+  con contadores globales; al cambiar filtro, reset a página 1.
+- Paginación client-side: `CLIENT_PAGE_SIZE = 10`, slice en memoria,
+  `<Pagination currentPage totalPages onChange />`.
+- Card por evento: título + `Badge` de estatus, fecha CDMX 12h (`formatFullDateTime`),
+  clases asociadas, inscritos confirmados, recaudación (`$X MXN`).
+  - Acciones: link "Ver detalle" → `/admin/events/[eventId]` + toggle "Ver asistentes (N)".
+  - Expansión inline read-only: desglose por clase (nombre, fecha CDMX 12h, coach, ocupados/total)
+    + participantes (nombre, correo, fecha de inscripción, método de pago, monto, badge de estatus)
+    + invitados admin indentados con `border-l-2 border-l-primary/40`.
+- Read-only: ninguna acción de aprobar/rechazar/cancelar en el historial.
+
+**3. `src/app/(portal)/admin/events/page.tsx` (modificar):**
+- Reemplazar el bloque `<SpecialEventList />` por `<SpecialEventHistory events={...} />`
+  alimentado por `getSpecialEventsHistory()`. Mantener intactos: alerta de evento activo,
+  formulario de creación y `hasActiveEvent`.
+
+**4. `src/lib/queries/__tests__/events-history.test.ts`:**
+- Orden `startDate DESC` del listado.
+- `revenue` = suma solo de confirmadas (pendientes/reembolsadas excluidas).
+- `confirmedCount` correcto por evento.
+
+### Prevención de regresiones
+- NO tocar `ClassManagement.tsx`, `Pagination.tsx` ni el detalle `/admin/events/[eventId]`.
+- Fechas con `formatFullDateTime` (CDMX 12h A.M./P.M.), sin `getHours()` ni `toLocaleDateString` raw.
+- Eventos activos siguen gestionándose desde el detalle existente; el historial es solo lectura.
+
+### Comando de verificación
+```bash
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm test
+pnpm build
+```
+
+---
+
+# TASK-DASHBOARD-PENDING-TRANSFER-MODAL — Banner + Modal de Datos Bancarios para Pagos Pendientes por Transferencia
+
+**Estado:** ✅ Ejecutado
+**Prioridad:** Alta (UX transaccional — el usuario pierde los datos bancarios tras generar la orden)
+**Problema:** al confirmar una compra por transferencia, los datos bancarios solo se muestran inline
+en el estado `result` de `SubscriptionCard.tsx` (L95-112) / `SpecialEventPurchase.tsx` (L76-93);
+cualquier re-render o navegación los oculta y el usuario no puede consultarlos después.
+**Solución:** banner persistente en el Dashboard del cliente mientras exista un pago
+`payments.confirmed === false && payments.paymentType === 'transfer'`, con botón
+"Ver datos de transferencia" que abre un modal con la cuenta activa del estudio.
+
+## Mapeo de nomenclatura (requerimiento → modelo real)
+
+| Requerimiento | Modelo real (Drizzle) |
+|---|---|
+| `status === 'pending'` (suscripción) | `payments.confirmed === false` (join `userSubscriptions.paymentId`) |
+| `status === 'pending'` (evento) | `specialEventRegistrations.status === 'pending'` + `payments.confirmed === false` |
+| `payment_method === 'transfer'` | `payments.paymentType === 'transfer'` |
+| Monto (suscripción) | `subscriptions.price` (payments NO tiene columna de monto) |
+| Monto (evento) | `specialEventRegistrations.amountPaid` |
+| Concepto | `subscriptions.name` / `specialEvents.title` |
+| Cuenta activa | `debitCards.findFirst({ where: eq(debitCards.active, true) })` |
+
+## Archivos a Intervenir
+
+| Archivo | Cambio |
+|---|---|
+| `src/components/client/BankTransferModal.tsx` | **Nuevo** — modal de datos bancarios con copiado al portapapeles |
+| `src/components/client/PendingTransferBanner.tsx` | **Nuevo** — banner client component que gestiona el estado del modal |
+| `src/lib/queries/pending-transfers.ts` | **Nuevo** — query server que agrupa los pendientes por transferencia del usuario |
+| `src/app/(portal)/client/page.tsx` | Modificar — invocar la query y renderizar un banner por cada pendiente |
+
+**NO modificar:** `SubscriptionCard.tsx`, `SpecialEventPurchase.tsx`
+(los bloques inline post-compra quedan intactos; fuera de alcance).
+**Desviación aprobada durante la ejecución:** se agregó el prop opcional y backward-compatible
+`hideCancel?: boolean` a `src/components/ui/Modal.tsx` (default `false`) para que el modal
+informativo muestre un único botón "Cerrar". No altera a ninguno de los 15 consumidores existentes.
+
+## TASK-QUERY-PENDING-TRANSFERS
+
+- **Archivo:** `src/lib/queries/pending-transfers.ts` (crear)
+- **Contexto:** patrón de queries server directas de `src/lib/queries/coach.ts`; el dashboard
+  actual (`client/page.tsx` L39-62) detecta `pending` pero sin tipo/método/monto.
+- **Instrucción — `getPendingTransferPayments(userId)`** retorna `PendingTransfer[]`:
+  1. **Suscripción:** select `userSubscriptions` join `payments` join `subscriptions`
+     donde `userId`, `payments.confirmed = false`, `payments.paymentType = 'transfer'`
+     → `{ kind: 'subscription', concept: subscriptions.name, amount: subscriptions.price }`.
+  2. **Evento:** select `specialEventRegistrations` join `payments` join `specialEvents`
+     donde `userId`, `specialEventRegistrations.status = 'pending'`,
+     `payments.confirmed = false`, `payments.paymentType = 'transfer'`
+     → `{ kind: 'event', concept: specialEvents.title, amount: amountPaid }`.
+  3. Ordenar por `payments.createdAt DESC` (más reciente primero). Pueden coexistir ambos.
+- **Tipo exportado:**
+  ```ts
+  export interface PendingTransfer {
+    kind: 'subscription' | 'event';
+    concept: string;
+    amount: number;
+  }
+  ```
+- **Verificación:** `pnpm exec tsc --noEmit`.
+
+## TASK-UI-BANK-TRANSFER-MODAL
+
+- **Archivo:** `src/components/client/BankTransferModal.tsx` (crear, `'use client'`)
+- **Contexto:** reutiliza `Modal` de `@/components/ui/Modal` con `onConfirm={onClose}`,
+  `confirmLabel="Cerrar"`; datos bancarios con el mismo layout que el bloque inline de
+  `SubscriptionCard.tsx` L96-111 (`bg-surface-container-low border border-outline-variant/40`).
+- **Props:** `isOpen`, `onClose`, `concept: string`, `amount: number`,
+  `bank: { cardBank: string; cardName: string; cardNumber: string } | null`.
+- **Contenido del modal:**
+  1. Concepto y **monto exacto** (`$X MXN`) destacados.
+  2. Banco, Titular/Beneficiario, Cuenta/CLABE — cada campo copiable con
+     `navigator.clipboard.writeText(...)` y feedback visual "Copiado"
+     (estado local `copiedField`, reset con `setTimeout` ~2s).
+  3. Si `bank === null`: mensaje "No hay datos bancarios configurados. Contacta al administrador."
+  4. Instrucción de comprobante: "Envía tu comprobante por mensaje directo a nuestro Instagram"
+     con link `<a href="https://www.instagram.com/thelabpilates.hpjn/" target="_blank"
+     rel="noopener noreferrer">@thelabpilates.hpjn</a>`.
+  5. Recordatorio: tu suscripción/lugar se activará cuando el administrador confirme tu pago.
+- **Cero pérdida de estado:** el modal es controlado por el banner padre con `useState`
+  booleano; abrir/cerrar no dispara mutations ni `router.refresh()`; los datos llegan
+  por props desde el server component (no hay fetch en cliente).
+
+## TASK-UI-PENDING-BANNER
+
+- **Archivo:** `src/components/client/PendingTransferBanner.tsx` (crear, `'use client'`)
+- **Props:** `transfers: PendingTransfer[]`, `bank: BankInfo | null`.
+- **Render:** un banner por cada item de `transfers` (decisión confirmada: banner individual
+  por pendiente, no consolidado):
+  - Estilo armónico con el aviso existente (`bg-warm-wood/10 border border-warm-wood/30`,
+    patrón de `subscription/page.tsx` L147-153).
+  - Mensaje: "Tienes un pago pendiente por transferencia para **{concept}**."
+  - Monto visible: "Monto a transferir: **$X MXN**".
+  - Botón "Ver datos de transferencia" → abre `BankTransferModal` con ese concepto/monto.
+  - El banner persiste mientras la query siga retornando el pendiente
+    (desaparece solo cuando el admin confirma o rechaza el pago — server-side).
+
+## TASK-INTEGRATION-DASHBOARD
+
+- **Archivo:** `src/app/(portal)/client/page.tsx` (modificar)
+- **Instrucción:**
+  1. Importar `getPendingTransferPayments` y `debitCards`; en `ClientDashboardPage`:
+     ```ts
+     const pendingTransfers = await getPendingTransferPayments(session.sub);
+     const activeCard = await db.query.debitCards.findFirst({
+       where: eq(debitCards.active, true),
+     });
+     ```
+  2. Renderizar `<PendingTransferBanner transfers={pendingTransfers} bank={...} />`
+     inmediatamente después del `<h1>` y **antes** del banner de evento disponible
+     (los pendientes tienen prioridad visual sobre promociones).
+  3. Envolver en el `try` existente o hacer fail-safe: si la query falla, no romper el dashboard.
+- **Nota:** `getSubscriptionState` queda intacto (su `{ type: 'pending' }` convive con el banner;
+  no eliminar el Card de "Suscripción pendiente" existente).
+
+## Comando de Verificación
+
+```bash
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm test
+pnpm build
+```
+
+### Resultado de la verificación
+- `pnpm exec tsc --noEmit` → 0 errores.
+- `pnpm exec eslint <archivos tocados>` → 0 errores / 0 warnings.
+  (`pnpm lint` global falla por 20 errores **preexistentes** en archivos no tocados:
+  `AddGuestButton.tsx`, `ClassCalendar.tsx`, `GuestTooltip.tsx`, `Hero.tsx` y tests.)
+- `pnpm test` → **56 archivos / 454 tests pasando** (+3 tests nuevos de la query).
+- `pnpm build` → **Compiled successfully** (Next.js 16.3.5, Turbopack).
+
+## Criterio de Aceptación
+
+- [x] Usuario con suscripción pendiente por transferencia ve el banner con concepto y monto.
+- [x] Usuario con registro de evento pendiente por transferencia ve su banner correspondiente.
+- [x] Usuario con ambos pendientes ve 2 banners independientes.
+- [x] Pagos pendientes en efectivo (`paymentType = 'cash'`) NO muestran el banner.
+- [x] El modal muestra banco, titular, CLABE/cuenta (copiables con feedback "Copiado"), monto
+      exacto, link a Instagram (@thelabpilates.hpjn, `target="_blank" rel="noopener noreferrer"`)
+      y recordatorio de activación tras validación del admin.
+- [x] El modal puede abrirse/cerrarse repetidamente sin re-renders indeseados ni pérdida de estado.
+- [x] Tras la confirmación/rechazo del admin, el banner desaparece (server-side, sin estado local).
+- [x] `tsc`, `lint` (archivos tocados), `test` y `build` en verde.
+
+## Archivos Finales
+
+| Archivo | Cambio |
+|---|---|
+| `src/lib/queries/pending-transfers.ts` | **Nuevo** — `getPendingTransferPayments(userId)` + tipo `PendingTransfer` |
+| `src/components/client/BankTransferModal.tsx` | **Nuevo** — modal reutilizable + tipo `BankInfo`, copiado al portapapeles |
+| `src/components/client/PendingTransferBanner.tsx` | **Nuevo** — banner por pendiente + control del modal |
+| `src/app/(portal)/client/page.tsx` | Modificado — fetch fail-safe de pendientes y cuenta activa + render del banner |
+| `src/components/ui/Modal.tsx` | Modificado — prop opcional `hideCancel` (default `false`) |
+| `src/lib/queries/__tests__/pending-transfers.test.ts` | **Nuevo** — 3 tests de merge/orden/fallbacks |
