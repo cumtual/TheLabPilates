@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, notInArray, inArray } from 'drizzle-orm';
+import { eq, desc, and, gte, notInArray, inArray, isNull } from 'drizzle-orm';
 import { db } from '@/db';
 import { openClasses, classEnrollments, userSubscriptions, users, guestEnrollments } from '@/db/schema';
 
@@ -16,7 +16,8 @@ export async function getCoachClasses(coachUserId: string) {
     .where(
       and(
         eq(openClasses.coachUserId, coachUserId),
-        gte(openClasses.classDate, thirtyDaysAgo)
+        gte(openClasses.classDate, thirtyDaysAgo),
+        isNull(openClasses.specialEventId)
       )
     )
     .orderBy(desc(openClasses.classDate));

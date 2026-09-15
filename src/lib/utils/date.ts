@@ -163,6 +163,32 @@ export function formatRelativeDate(
 }
 
 /**
+ * Convierte un instante a un string compatible con `<input type="datetime-local">`
+ * usando el calendario/reloj de America/Mexico_City.
+ * Ejemplo: Date(2026-09-15T03:30:00Z) → "2026-09-14T21:30".
+ */
+export function toMexicoCityDatetimeLocal(date: Date | string | null): string {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  const hour = get('hour') === '24' ? '00' : get('hour');
+
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}`;
+}
+
+/**
  * Interpreta un valor de datetime-local (sin timezone) como hora de Ciudad de México.
  * Convierte "2025-07-28T09:00" → Date object representing 2025-07-28T09:00:00 in America/Mexico_City.
  *

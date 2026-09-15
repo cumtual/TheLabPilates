@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { openClasses, users, classEnrollments, guestEnrollments } from '@/db/schema';
-import { eq, and, gte, lte, count, inArray, notInArray } from 'drizzle-orm';
+import { eq, and, gte, lte, count, inArray, notInArray, isNull } from 'drizzle-orm';
 import { ScheduleClient } from './ScheduleClient';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 import { formatTimeWithMeridiem } from '@/lib/utils/date';
@@ -44,7 +44,8 @@ export default async function Schedule() {
       and(
         eq(openClasses.status, 'scheduled'),
         gte(openClasses.classDate, now),
-        lte(openClasses.classDate, end)
+        lte(openClasses.classDate, end),
+        isNull(openClasses.specialEventId)
       )
     )
     .orderBy(openClasses.classDate);

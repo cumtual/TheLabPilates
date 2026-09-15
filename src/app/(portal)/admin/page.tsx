@@ -1,17 +1,21 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { payments, openClasses, users } from '@/db/schema';
-import { eq, count, gte, and } from 'drizzle-orm';
+import { payments, openClasses, users, userSubscriptions } from '@/db/schema';
+import { eq, count, gte, and, isNull } from 'drizzle-orm';
 import { Card } from '@/components/ui/Card';
 import Link from 'next/link';
 
 async function getDashboardMetrics() {
   const now = new Date();
 
+  // Only subscription payments are managed from /admin/payments; event payments
+  // are approved inside each event panel. Join keeps this count consistent with
+  // the payments management page.
   const [pendingPayments] = await db
     .select({ value: count() })
     .from(payments)
+    .innerJoin(userSubscriptions, eq(userSubscriptions.paymentId, payments.id))
     .where(eq(payments.confirmed, false));
 
   const [upcomingClasses] = await db
@@ -20,7 +24,8 @@ async function getDashboardMetrics() {
     .where(
       and(
         eq(openClasses.status, 'scheduled'),
-        gte(openClasses.classDate, now)
+        gte(openClasses.classDate, now),
+        isNull(openClasses.specialEventId)
       )
     );
 
