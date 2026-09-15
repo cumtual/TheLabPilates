@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.0](https://github.com/cumtual/TheLabPilates/compare/v1.12.0...v1.13.0) (2026-09-15)
+
+
+### Features
+
+* add special events functionality including registration, discou… ([b448d09](https://github.com/cumtual/TheLabPilates/commit/b448d09a6e1fcce9e429b0a0fec717edc775705c))
+* add special events functionality including registration, discounts, and history ([5d44067](https://github.com/cumtual/TheLabPilates/commit/5d4406770546aa7fe178f49d2de8640d867f2bcb))
+
 ## [1.12.0](https://github.com/cumtual/TheLabPilates/compare/v1.11.0...v1.12.0) (2026-09-14)
 
 
