@@ -20,6 +20,8 @@ export interface ModalProps {
   confirmLabel?: string
   /** Cancel button label */
   cancelLabel?: string
+  /** Hide the cancel button (use for informational, single-action modals) */
+  hideCancel?: boolean
   /** Visual variant for the confirm button */
   variant?: ModalVariant
   /** Additional CSS classes */
@@ -34,6 +36,7 @@ export function Modal({
   children,
   confirmLabel = 'Confirmar',
   cancelLabel = 'Cancelar',
+  hideCancel = false,
   variant = 'default',
   className = '',
 }: ModalProps) {
@@ -101,13 +104,15 @@ export function Modal({
 
         {/* Actions */}
         <div className="flex justify-end gap-3 px-6 pb-6 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 min-h-11 min-w-11 font-body text-body-md font-semibold text-on-surface-variant bg-transparent border border-outline-variant rounded-DEFAULT transition-colors duration-200 hover:bg-surface-container-low focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer"
-          >
-            {cancelLabel}
-          </button>
+          {!hideCancel && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2.5 min-h-11 min-w-11 font-body text-body-md font-semibold text-on-surface-variant bg-transparent border border-outline-variant rounded-DEFAULT transition-colors duration-200 hover:bg-surface-container-low focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer"
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}

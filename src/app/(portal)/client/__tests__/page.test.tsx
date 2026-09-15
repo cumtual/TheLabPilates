@@ -4,6 +4,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/db', () => ({
   db: {
     select: vi.fn(),
+    query: {
+      specialEvents: { findFirst: vi.fn() },
+      specialEventRegistrations: { findFirst: vi.fn() },
+    },
   },
 }));
 

@@ -95,6 +95,28 @@ export async function sendClassCancellationEmail(
 }
 
 
+export async function sendSpecialEventCancellationEmail(
+  recipients: { email: string; name: string }[],
+  eventInfo: { title: string; startDate: Date }
+): Promise<void> {
+  const formattedDate = formatFullDateTime(eventInfo.startDate);
+
+  for (const recipient of recipients) {
+    await sendEmail({
+      to: recipient.email,
+      subject: `Evento cancelado: ${eventInfo.title} - The Lab Pilates Studio`,
+      html: `
+        <h1>Evento Cancelado</h1>
+        <p>Hola ${recipient.name},</p>
+        <p>Te informamos que el evento especial <strong>${eventInfo.title}</strong> programado para el <strong>${formattedDate}</strong> ha sido cancelado por causas externas al estudio.</p>
+        <p>El reembolso de tu pago se procesará de forma manual. Nos pondremos en contacto contigo para coordinar la devolución.</p>
+        <p>Disculpa las molestias.</p>
+        <p>— The Lab Pilates Studio</p>
+      `,
+    });
+  }
+}
+
 export async function sendVerificationEmail(
   email: string,
   token: string

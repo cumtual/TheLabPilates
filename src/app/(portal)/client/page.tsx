@@ -1,15 +1,27 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { userSubscriptions, payments, subscriptions, classEnrollments, openClasses, users } from '@/db/schema';
+import {
+  userSubscriptions,
+  payments,
+  subscriptions,
+  classEnrollments,
+  openClasses,
+  users,
+  specialEvents,
+  specialEventRegistrations,
+  debitCards,
+} from '@/db/schema';
 import { eq, desc, and, gt } from 'drizzle-orm';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
 import { ClientDashboardError } from '@/components/client/ClientDashboardError';
+import { PendingTransferBanner } from '@/components/client/PendingTransferBanner';
 import { formatFullDateTime } from '@/lib/utils/date';
 import { getGuestCreditsForCycle } from '@/lib/guest/credits';
 import { getClassDisplayName } from '@/lib/utils/class-type';
+import { getPendingTransferPayments } from '@/lib/queries/pending-transfers';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -144,6 +156,21 @@ async function getNextClass(userId: string) {
   return result[0];
 }
 
+async function getAvailableSpecialEvent(userId: string) {
+  const active = await db.query.specialEvents.findFirst({
+    where: eq(specialEvents.status, 'active'),
+  });
+  if (!active) return null;
+
+  const registration = await db.query.specialEventRegistrations.findFirst({
+    where: and(
+      eq(specialEventRegistrations.specialEventId, active.id),
+      eq(specialEventRegistrations.userId, userId)
+    ),
+  });
+  return registration ? null : active;
+}
+
 export default async function ClientDashboardPage() {
   const session = await getSession();
   if (!session) redirect('/login');
@@ -151,10 +178,14 @@ export default async function ClientDashboardPage() {
   let state: SubscriptionState;
   let error = false;
   let nextClass: Awaited<ReturnType<typeof getNextClass>> = null;
+  let availableEvent: Awaited<ReturnType<typeof getAvailableSpecialEvent>> = null;
+  let pendingTransfers: Awaited<ReturnType<typeof getPendingTransferPayments>> = [];
+  let bankInfo: { cardBank: string; cardName: string; cardNumber: string } | null = null;
 
   try {
     state = await getSubscriptionState(session.sub);
     nextClass = await getNextClass(session.sub);
+    availableEvent = await getAvailableSpecialEvent(session.sub);
   } catch {
     error = true;
     state = { type: 'none' };
@@ -164,9 +195,49 @@ export default async function ClientDashboardPage() {
     return <ClientDashboardError />;
   }
 
+  try {
+    pendingTransfers = await getPendingTransferPayments(session.sub);
+    const activeCard = await db.query.debitCards.findFirst({
+      where: eq(debitCards.active, true),
+    });
+    bankInfo = activeCard
+      ? {
+          cardBank: activeCard.cardBank,
+          cardName: activeCard.cardName,
+          cardNumber: activeCard.cardNumber,
+        }
+      : null;
+  } catch {
+    // Pending-transfer lookup is non-critical: keep the dashboard usable.
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="font-headline text-headline-lg-mobile text-on-surface py-6">Mi Suscripción</h1>
+
+      {/* Pending bank transfer payments */}
+      <PendingTransferBanner transfers={pendingTransfers} bank={bankInfo} />
+
+      {/* Evento especial disponible */}
+      {availableEvent && (
+        <Link href="/client/events" className="block">
+          <Card className="border-secondary/40 bg-secondary/5 hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-secondary text-[28px]">celebration</span>
+              <div className="flex-1">
+                <h2 className="font-body text-sm font-semibold text-secondary uppercase tracking-wide">
+                  Evento Especial Disponible
+                </h2>
+                <p className="font-body text-lg font-bold text-on-surface">{availableEvent.title}</p>
+                <p className="font-body text-sm text-on-surface-variant">
+                  Reserva tu lugar antes de que se agoten.
+                </p>
+              </div>
+              <span className="material-symbols-outlined text-secondary">chevron_right</span>
+            </div>
+          </Card>
+        </Link>
+      )}
 
       {/* Próxima clase */}
       {nextClass && (
