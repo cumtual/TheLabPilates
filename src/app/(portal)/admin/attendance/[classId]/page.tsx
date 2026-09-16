@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { getCoachClassById, getClassEnrollments, getCancelledEnrollments, getClassGuestEnrollments } from '@/lib/queries/coach';
 import { getClassDisplayName } from '@/lib/utils/class-type';
-import { formatFullDateTime } from '@/lib/utils/date';
+import { formatFullDateTime, getMexicoCityDayBounds } from '@/lib/utils/date';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
 import { AdminGuestSection } from '@/components/admin/AdminGuestSection';
 import { Card } from '@/components/ui/Card';
@@ -34,9 +34,12 @@ export default async function AdminAttendancePage({
     );
   }
 
-  const isFutureClass = openClass.classDate
-    ? new Date(openClass.classDate) > new Date()
-    : false;
+  const now = new Date();
+  const dayBounds = openClass.classDate
+    ? getMexicoCityDayBounds(openClass.classDate)
+    : null;
+  const isFutureClass = dayBounds ? now < dayBounds.start : false;
+  const attendanceClosed = dayBounds ? now > dayBounds.end : false;
 
   const enrollments = await getClassEnrollments(classId);
   const cancelledEnrollments = await getCancelledEnrollments(classId);
@@ -113,6 +116,7 @@ export default async function AdminAttendancePage({
           classId={classId}
           enrollments={enrollments}
           isCompleted={openClass.status === 'completed'}
+          attendanceClosed={attendanceClosed}
         />
       )}
 

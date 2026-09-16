@@ -162,13 +162,13 @@ describe('Bug 3: updateAttendanceAction Should NOT Change Class Status', () => {
       email: 'coach@test.com',
     });
 
-    // Mock the class lookup — class exists, belongs to coach, date in past
-    const pastDate = new Date();
-    pastDate.setDate(pastDate.getDate() - 1); // yesterday
+    // Mock the class lookup — class exists, belongs to coach, on today's CDMX day
+    // (attendance is enabled for the whole class calendar day)
+    const classDate = new Date(); // today
     (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'class-id-123',
       coachUserId: 'coach-uuid-123',
-      classDate: pastDate,
+      classDate,
       status: 'scheduled',
       capacity: 10,
     });

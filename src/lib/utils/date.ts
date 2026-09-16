@@ -208,3 +208,57 @@ export function parseDateTimeLocalAsMexicoCity(dateTimeLocal: string): Date {
 
   return new Date(withOffset);
 }
+
+/** Tolerancia posreserva para cancelar por error con reembolso íntegro. */
+export const GRACE_PERIOD_MINUTES = 10;
+
+/**
+ * true si `createdAt` está a 10 minutos o menos de `now` (inclusive).
+ * `<= 10` → con gracia. `> 10` → sin gracia. `null`/inválido → false (fail-safe).
+ */
+export function isWithinGracePeriod(
+  createdAt: Date | string | null,
+  now: Date = new Date()
+): boolean {
+  if (!createdAt) return false;
+  const created = new Date(createdAt);
+  if (isNaN(created.getTime())) return false;
+
+  const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+  return diffMinutes <= GRACE_PERIOD_MINUTES;
+}
+
+/**
+ * Fronteras del día calendario en CDMX para un instante dado.
+ * start = 00:00:00.000 CDMX, end = 23:59:59.999 CDMX.
+ * Mexico City es UTC-6 fijo (sin DST desde oct-2022).
+ */
+export function getMexicoCityDayBounds(date: Date | string): { start: Date; end: Date } {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) throw new Error('Fecha inválida');
+
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+
+  return {
+    start: new Date(`${ymd}T00:00:00.000-06:00`),
+    end: new Date(`${ymd}T23:59:59.999-06:00`),
+  };
+}
+
+/** true si `now` cae dentro del día calendario CDMX de `classDate`. */
+export function isAttendanceWindowOpen(
+  classDate: Date | string | null,
+  now: Date = new Date()
+): boolean {
+  if (!classDate) return false;
+  const d = new Date(classDate);
+  if (isNaN(d.getTime())) return false;
+
+  const { start, end } = getMexicoCityDayBounds(d);
+  return now >= start && now <= end;
+}

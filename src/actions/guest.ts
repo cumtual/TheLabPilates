@@ -14,6 +14,7 @@ import { getSession } from '@/lib/auth/session';
 import { isUserOpenLabEligible } from '@/lib/guest/eligibility';
 import { getGuestCreditsForCycle, consumeGuestCredit, restoreGuestCredit } from '@/lib/guest/credits';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
+import { isWithinGracePeriod } from '@/lib/utils/date';
 import type { GuestEligibilityResult } from '@/lib/types/guest';
 import type { ActionResult } from '@/lib/types';
 
@@ -609,8 +610,9 @@ export async function cancelGuestAction(
   // Calculate hours until class
   const hoursUntilClass =
     (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+  const withinGrace = isWithinGracePeriod(guestEnrollment.createdAt);
 
-  if (hoursUntilClass > 24) {
+  if (hoursUntilClass > 24 || withinGrace) {
     // Timely cancellation: cancel guest + restore credit
     try {
       // Get user subscription to restore credit
@@ -639,7 +641,13 @@ export async function cancelGuestAction(
     revalidatePath('/client');
     revalidatePath('/client/reservations');
     revalidatePath('/');
-    return { success: true, message: 'Invitado cancelado. Tu crédito de invitado ha sido restaurado.' };
+    return {
+      success: true,
+      message:
+        withinGrace && hoursUntilClass <= 24
+          ? 'Invitado cancelado dentro de la tolerancia. Tu crédito de invitado ha sido restaurado.'
+          : 'Invitado cancelado. Tu crédito de invitado ha sido restaurado.',
+    };
   } else {
     // Late cancellation: return signal for UI to show confirmation dialog
     return { success: false, error: 'LATE_CANCELLATION' };
@@ -686,6 +694,32 @@ export async function confirmLateCancelGuestAction(
   // Verify ownership
   if (guestEnrollment.registeredById !== session.sub) {
     return { success: false, error: 'No tienes permisos para cancelar este invitado.' };
+  }
+
+  // The user may have opened the late-cancel dialog while still inside the grace
+  // window and confirmed after it lapsed. Re-evaluate: within grace → restore credit.
+  if (isWithinGracePeriod(guestEnrollment.createdAt)) {
+    try {
+      await db
+        .update(guestEnrollments)
+        .set({ status: 'cancelled' })
+        .where(eq(guestEnrollments.id, guestEnrollmentId));
+
+      const eligibility = await isUserOpenLabEligible(session.sub);
+      if (eligibility.eligible && eligibility.userSubscription) {
+        await restoreGuestCredit(session.sub, eligibility.userSubscription.id);
+      }
+    } catch {
+      return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+    }
+
+    revalidatePath('/client');
+    revalidatePath('/client/reservations');
+    revalidatePath('/');
+    return {
+      success: true,
+      message: 'Invitado cancelado dentro de la tolerancia. Tu crédito de invitado ha sido restaurado.',
+    };
   }
 
   // Cancel the guest enrollment without restoring credit
@@ -788,8 +822,9 @@ export async function cancelReservationWithGuestAction(
   // Calculate hours until class
   const hoursUntilClass =
     (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+  const withinGrace = isWithinGracePeriod(enrollment.createdAt);
 
-  if (hoursUntilClass > 24) {
+  if (hoursUntilClass > 24 || withinGrace) {
     // Timely cancellation: cancel both + restore credit
     try {
       await db.transaction(async (tx) => {
@@ -825,7 +860,10 @@ export async function cancelReservationWithGuestAction(
     revalidatePath('/');
     return {
       success: true,
-      message: 'Reservación y invitado cancelados. Tu crédito de invitado ha sido restaurado.',
+      message:
+        withinGrace && hoursUntilClass <= 24
+          ? 'Reservación e invitado cancelados dentro de la tolerancia. Tu crédito de invitado ha sido restaurado.'
+          : 'Reservación y invitado cancelados. Tu crédito de invitado ha sido restaurado.',
     };
   } else {
     // Late cancellation: return signal for UI to show confirmation dialog
@@ -893,6 +931,36 @@ export async function confirmLateCancelBothAction(
 
   if (!activeGuest) {
     return { success: false, error: 'No se encontró un invitado asociado a esta reserva.' };
+  }
+
+  // Grace re-check: the user may have confirmed after the 10-min window lapsed.
+  if (isWithinGracePeriod(enrollment.createdAt)) {
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(classEnrollments)
+          .set({ status: 'cancelled' })
+          .where(eq(classEnrollments.id, enrollmentId));
+
+        await tx
+          .update(guestEnrollments)
+          .set({ status: 'cancelled' })
+          .where(eq(guestEnrollments.id, activeGuest.id));
+      });
+
+      await restoreGuestCredit(session.sub, enrollment.userSubscriptionId);
+    } catch {
+      return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+    }
+
+    revalidatePath('/client');
+    revalidatePath('/client/reservations');
+    revalidatePath('/');
+    return {
+      success: true,
+      message:
+        'Reservación e invitado cancelados dentro de la tolerancia. Tu crédito de invitado ha sido restaurado.',
+    };
   }
 
   // Execute atomic late cancellation: titular as 'late_cancelled', guest as 'cancelled'

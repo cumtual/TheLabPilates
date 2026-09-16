@@ -903,3 +903,582 @@ pnpm build
 | `src/app/(portal)/client/page.tsx` | Modificado — fetch fail-safe de pendientes y cuenta activa + render del banner |
 | `src/components/ui/Modal.tsx` | Modificado — prop opcional `hideCancel` (default `false`) |
 | `src/lib/queries/__tests__/pending-transfers.test.ts` | **Nuevo** — 3 tests de merge/orden/fallbacks |
+
+---
+
+# TASK-BOOKING-GRACE-ATTENDANCE — Ventana de Gracia, Modal de Reserva y Pase de Lista hasta Fin de Día CDMX
+
+**Estado:** ✅ Ejecutado
+**Prioridad:** Alta (regla de negocio transaccional + timezone)
+**Alcance:** 3 reglas de negocio en el flujo de reservas y asistencias.
+**Sin migraciones:** `classEnrollments.createdAt` y `guestEnrollments.createdAt` ya existen
+(`timestamp with time zone`, `defaultNow()`). No tocar el schema.
+**Timezone:** `America/Mexico_City` es UTC-6 fijo todo el año (sin DST desde oct-2022).
+Todas las fronteras horarias se construyen con offset `-06:00` (mismo criterio que
+`parseDateTimeLocalAsMexicoCity` en `src/lib/utils/date.ts`). **Prohibido** usar
+`getHours()/setHours()/getDate()` para calcular la ventana.
+
+## Archivos a Modificar / Crear
+
+| Archivo | Cambio |
+|---|---|
+| `src/lib/utils/date.ts` | Nuevos helpers `GRACE_PERIOD_MINUTES`, `isWithinGracePeriod`, `getMexicoCityDayBounds`, `isAttendanceWindowOpen` |
+| `src/actions/enrollment.ts` | Gracia de 10 min en `cancelReservationAction` + re-chequeo en `confirmLateCancellationAction` |
+| `src/actions/guest.ts` | Gracia de 10 min en `cancelGuestAction`, `cancelReservationWithGuestAction`, `confirmLateCancelGuestAction`, `confirmLateCancelBothAction` |
+| `src/components/client/BookingConfirmationModal.tsx` | **Nuevo** — modal de confirmación con recordatorio de política |
+| `src/components/client/EnrollWithGuestSection.tsx` | Intercepta el submit y exige confirmación en el modal |
+| `src/components/client/ClassList.tsx` | Pasa `classLabel` y `classDateTime` a `EnrollWithGuestSection` |
+| `src/actions/coach.ts` | Ventana de asistencia de día completo CDMX en `updateAttendanceAction` |
+| `src/components/coach/AttendanceSheet.tsx` | Prop `attendanceClosed` → toggles/botón deshabilitados + aviso de solo lectura |
+| `src/app/(portal)/coach/attendance/[classId]/page.tsx` | Calcula `isFutureClass`/`attendanceClosed` con los bounds CDMX y los pasa |
+| `src/app/(portal)/admin/attendance/[classId]/page.tsx` | Idem página de admin |
+| `src/lib/utils/__tests__/date-window.test.ts` | **Nuevo** — tests unitarios de los helpers |
+| `src/actions/__tests__/grace-period-cancellation.test.ts` | **Nuevo** — gracia titular + invitado |
+| `src/actions/__tests__/attendance.test.ts` | Extender con casos de ventana de fin de día CDMX |
+
+---
+
+## TASK-1 — HELPERS DE TIEMPO (`src/lib/utils/date.ts`)
+
+Agregar al final del archivo (mantener el estilo existente: sin dependencias nuevas,
+`Intl` con `timeZone: TIMEZONE`):
+
+```ts
+/** Tolerancia posreserva para cancelar por error con reembolso íntegro. */
+export const GRACE_PERIOD_MINUTES = 10;
+
+/**
+ * true si `createdAt` está a 10 minutos o menos de `now` (inclusive).
+ * `<= 10` → con gracia. `> 10` → sin gracia.
+ */
+export function isWithinGracePeriod(
+  createdAt: Date | string | null,
+  now: Date = new Date()
+): boolean {
+  if (!createdAt) return false;
+  const created = new Date(createdAt);
+  if (isNaN(created.getTime())) return false;
+  const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
+  return diffMinutes <= GRACE_PERIOD_MINUTES;
+}
+
+/**
+ * Fronteras del día calendario en CDMX para un instante dado.
+ * start = 00:00:00.000 CDMX, end = 23:59:59.999 CDMX.
+ * Mexico City es UTC-6 fijo (sin DST desde oct-2022).
+ */
+export function getMexicoCityDayBounds(date: Date | string): { start: Date; end: Date } {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) throw new Error('Fecha inválida');
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d); // "YYYY-MM-DD"
+  return {
+    start: new Date(`${ymd}T00:00:00.000-06:00`),
+    end: new Date(`${ymd}T23:59:59.999-06:00`),
+  };
+}
+
+/** true si `now` cae dentro del día calendario CDMX de `classDate`. */
+export function isAttendanceWindowOpen(
+  classDate: Date | string | null,
+  now: Date = new Date()
+): boolean {
+  if (!classDate) return false;
+  const d = new Date(classDate);
+  if (isNaN(d.getTime())) return false;
+  const { start, end } = getMexicoCityDayBounds(d);
+  return now >= start && now <= end;
+}
+```
+
+---
+
+## TASK-2 — BACKEND: GRACIA DE 10 MIN EN CANCELACIONES (`src/actions/enrollment.ts`)
+
+**Archivo:** `src/actions/enrollment.ts`
+**Import:** agregar `isWithinGracePeriod` al import existente de `@/lib/utils/date`.
+
+### TASK-2.1 — `cancelReservationAction` (L256-285)
+
+Reemplazar el chequeo de 24 h por `24 h OR gracia`:
+
+```ts
+// Check if ≥24h before class OR within the 10-min grace window
+const hoursUntilClass =
+  (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+const withinGrace = isWithinGracePeriod(enrollment.createdAt);
+
+if (hoursUntilClass >= 24 || withinGrace) {
+  // Cancelación a tiempo o por error (gracia): delete + refund crédito (atómico)
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(classEnrollments).where(eq(classEnrollments.id, enrollmentId));
+      if (!isOpenLab) {
+        await tx.execute(sql`
+          UPDATE user_suscriptions
+          SET days_remaining = days_remaining + 1
+          WHERE id = ${enrollment.userSubscriptionId}
+        `);
+      }
+    });
+  } catch {
+    return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+  }
+
+  revalidatePath('/client/reservations');
+  revalidatePath('/client');
+  revalidatePath('/');
+  return {
+    success: true,
+    message:
+      withinGrace && hoursUntilClass < 24
+        ? 'Cancelada dentro de los 10 minutos de tolerancia. Tu crédito ha sido restaurado.'
+        : 'Reservación cancelada. Tu crédito ha sido restaurado.',
+  };
+} else {
+  // Late cancellation: señal al cliente para confirmar (sin reembolso)
+  return { success: false, error: 'LATE_CANCELLATION', field: 'late' };
+}
+```
+
+> **Nota de orden:** `enrollment.createdAt` se obtiene de la fila ya cargada en L189-194
+> (`db.select({ enrollment: classEnrollments, ... })`). No requiere query extra.
+> Si `createdAt` es `null` (dato legado), `isWithinGracePeriod` devuelve `false` → se aplica
+> la regla estricta de 24 h (fail-safe).
+
+### TASK-2.2 — `confirmLateCancellationAction` (L288-353)
+
+El usuario puede confirmar el modal tardío **dentro** de su ventana de gracia (p. ej. abrió
+el modal en el min 9 y confirmó en el min 10). Antes de marcar `late_cancelled`, recalcular:
+
+```ts
+const hoursUntilClass =
+  (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+
+if (hoursUntilClass >= 24 || isWithinGracePeriod(enrollment.createdAt)) {
+  // Ya califica como reembolso → ejecutar la misma rama de reembolso
+  const [subRow] = await db
+    .select({ guest: subscriptions.guest })
+    .from(userSubscriptions)
+    .leftJoin(subscriptions, eq(userSubscriptions.subscriptionId, subscriptions.id))
+    .where(eq(userSubscriptions.id, enrollment.userSubscriptionId));
+  const isOpenLab = subRow?.guest === true;
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(classEnrollments).where(eq(classEnrollments.id, enrollmentId));
+      if (!isOpenLab) {
+        await tx.execute(sql`
+          UPDATE user_suscriptions
+          SET days_remaining = days_remaining + 1
+          WHERE id = ${enrollment.userSubscriptionId}
+        `);
+      }
+    });
+  } catch {
+    return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+  }
+
+  revalidatePath('/client/reservations');
+  revalidatePath('/client');
+  revalidatePath('/');
+  return { success: true, message: 'Reservación cancelada. Tu crédito ha sido restaurado.' };
+}
+
+// ...resto existente: marcar 'late_cancelled' sin reembolso
+```
+
+> **Sugerencia de refactor (opcional):** extraer la rama de reembolso a una función privada
+> `refundEnrollment(enrollment, isOpenLab)` para no duplicarla en 2.1 y 2.2.
+
+---
+
+## TASK-3 — BACKEND: GRACIA DE 10 MIN EN FLUJOS DE INVITADO (`src/actions/guest.ts`)
+
+Aplicar la **misma** regla `>= 24 h OR gracia` en los 4 puntos de decisión. Importar
+`isWithinGracePeriod` desde `@/lib/utils/date`.
+
+| Función | Punto de decisión | Cambio |
+|---|---|---|
+| `cancelGuestAction` (L610-646) | `if (hoursUntilClass > 24)` | `if (hoursUntilClass > 24 \|\| isWithinGracePeriod(guestEnrollment.createdAt))` |
+| `cancelReservationWithGuestAction` (L789-833) | `if (hoursUntilClass > 24)` | `if (hoursUntilClass > 24 \|\| isWithinGracePeriod(enrollment.createdAt))` |
+| `confirmLateCancelGuestAction` (L658-708) | hoy solo cancela sin reembolsar | Si `isWithinGracePeriod(guestEnrollment.createdAt)` → cancelar invitado **y** `restoreGuestCredit(session.sub, userSub.id)` (misma lógica que la rama a tiempo de `cancelGuestAction`) |
+| `confirmLateCancelBothAction` (L847+) | hoy solo cancela ambos sin reembolsar | Si `isWithinGracePeriod(enrollment.createdAt)` → cancelar titular + invitado y `restoreGuestCredit(...)` |
+
+Snippet de referencia (rama a tiempo, `cancelGuestAction`):
+
+```ts
+const hoursUntilClass =
+  (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+const withinGrace = isWithinGracePeriod(guestEnrollment.createdAt);
+
+if (hoursUntilClass > 24 || withinGrace) {
+  // ... lógica existente de cancelar + restoreGuestCredit(...)
+  return {
+    success: true,
+    message: withinGrace && hoursUntilClass <= 24
+      ? 'Invitado cancelado dentro de la tolerancia. Tu crédito de invitado ha sido restaurado.'
+      : 'Invitado cancelado. Tu crédito de invitado ha sido restaurado.',
+  };
+} else {
+  return { success: false, error: 'LATE_CANCELLATION' };
+}
+```
+
+> **Nota:** `cancelReservationAction` retorna `HAS_GUEST` (L233-240) **antes** del chequeo de
+> fechas, así que la gracia de una reserva con invitado se evalúa en `guest.ts` (diálogo de
+> cancelación de invitado), no en `enrollment.ts`. No cambiar ese orden.
+
+---
+
+## TASK-4 — FRONTEND: MODAL DE CONFIRMACIÓN DE RESERVA
+
+### TASK-4.1 — Nuevo `src/components/client/BookingConfirmationModal.tsx`
+
+```tsx
+'use client';
+
+import { Modal } from '@/components/ui/Modal';
+import { formatTimeWithMeridiem } from '@/lib/utils/date';
+
+export interface BookingConfirmationModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  /** Nombre visible de la clase (p. ej. "Mat Pilates"). */
+  classLabel: string;
+  /** Fecha/hora de inicio de la clase. */
+  classDateTime: Date | string;
+  /** Deshabilita "Confirmar Reserva" mientras corre la mutación. */
+  isLoading?: boolean;
+}
+
+export function BookingConfirmationModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  classLabel,
+  classDateTime,
+  isLoading = false,
+}: BookingConfirmationModalProps) {
+  const time = formatTimeWithMeridiem(classDateTime);
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      onConfirm={onConfirm}
+      title="Confirmar reserva"
+      confirmLabel={isLoading ? 'Reservando...' : 'Confirmar Reserva'}
+      cancelLabel="Cancelar / Volver"
+    >
+      <div className="space-y-3">
+        <p>
+          ¿Confirmar tu reserva para <span className="font-semibold">{classLabel}</span> a las{' '}
+          <span className="font-semibold">{time}</span>?
+        </p>
+
+        <div className="rounded-lg border border-primary/30 bg-primary/10 p-3 space-y-1">
+          <p className="font-body text-sm font-semibold text-on-surface">
+            Política de cancelación
+          </p>
+          <p className="font-body text-xs text-on-surface-variant">
+            Recuerda que tienes hasta 24 horas antes de la clase para cancelar y recuperar tu
+            crédito. Cuentas con 10 minutos de tolerancia tras reservar por si cometiste un error.
+          </p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+```
+
+### TASK-4.2 — `EnrollWithGuestSection.tsx` (interceptar submit)
+
+1. Agregar props `classLabel: string` y `classDateTime: Date | string` a
+   `EnrollWithGuestSectionProps`.
+2. Nuevo estado `const [showConfirm, setShowConfirm] = useState(false);`.
+3. Renombrar el `handleEnroll` actual a `performEnroll` (sin cambios internos: valida/ejecuta
+   y llama a `enrollWithGuestAction` o `enrollInClassAction`).
+4. Nuevo `handleRequestEnroll()`: valida el nombre del invitado y, si todo está correcto,
+   **solo** abre el modal (`setShowConfirm(true)`). No ejecuta la mutación.
+5. El `<button>` de reserva usa `onClick={handleRequestEnroll}`.
+6. Al final del JSX:
+
+```tsx
+<BookingConfirmationModal
+  isOpen={showConfirm}
+  onClose={() => setShowConfirm(false)}
+  onConfirm={() => {
+    setShowConfirm(false);
+    void performEnroll();
+  }}
+  classLabel={classLabel}
+  classDateTime={classDateTime}
+  isLoading={loading}
+/>
+```
+
+> La mutación se dispara **únicamente** desde el botón "Confirmar Reserva" del modal.
+
+### TASK-4.3 — `ClassList.tsx` (pasar contexto)
+
+```tsx
+<EnrollWithGuestSection
+  classId={classItem.id}
+  classLabel={getClassDisplayName(classItem.classType, classItem.customName)}
+  classDateTime={classItem.classDate}
+/>
+```
+
+> `EnrollButton.tsx` es legacy y **no se usa** (solo lo referencia un comentario en
+> `EnrollWithGuestSection.tsx`). No modificarlo.
+
+---
+
+## TASK-5 — BACKEND: ASISTENCIA HABILITADA TODO EL DÍA CDMX (`src/actions/coach.ts`)
+
+**Función:** `updateAttendanceAction` (L18-74). Reemplazar el guard de L52-55
+(`if (!openClass.classDate || new Date(openClass.classDate) > new Date())`) por:
+
+```ts
+import { getMexicoCityDayBounds } from '@/lib/utils/date';
+
+if (!openClass.classDate) {
+  return { success: false, error: 'Clase no encontrada.' };
+}
+
+const { start, end } = getMexicoCityDayBounds(openClass.classDate);
+const now = new Date();
+
+if (now < start) {
+  // Antes del día de la clase (día calendario CDMX): aún no se pasa lista
+  return { success: false, error: 'No puedes registrar asistencia antes del día de la clase.' };
+}
+
+if (now > end) {
+  // Pasada la medianoche CDMX (12:00 AM del día siguiente) → bloqueo estricto
+  return {
+    success: false,
+    error: 'El periodo para registrar asistencia de esta clase ha finalizado.',
+  };
+}
+
+// ...resto existente: actualizar classEnrollments y guestEnrollments
+```
+
+**Comportamiento resultante:**
+- Clase programada el día $D$ → asistencia habilitada desde `00:00:00.000` hasta
+  `23:59:59.999` de $D$ en `America/Mexico_City` (incluye la hora previa a la clase).
+- Al día siguiente → **rechazado** con `El periodo para registrar asistencia de esta clase ha finalizado.`
+- `completeClassAction` **queda intacto** (fuera de alcance por decisión explícita).
+- El frontend ya no debe usar `new Date(classDate) > new Date()` como único gate
+  (una clase de hoy a las 20:00 con `now` 10:00 aparecía como "futura"); ver TASK-6.
+
+---
+
+## TASK-6 — FRONTEND: ASISTENCIA SOLO LECTURA TRAS EL CORTE
+
+### TASK-6.1 — `AttendanceSheet.tsx`
+
+1. Agregar prop opcional `attendanceClosed?: boolean` (default `false`).
+2. `const readonly = classCompleted || attendanceClosed;`
+3. En **todos** los botones "Asistió"/"Ausente" (titulares y invitados) cambiar
+   `disabled={classCompleted || isPending}` → `disabled={readonly || isPending}`.
+4. El botón "Guardar asistencia" se renderiza solo si `!classCompleted && !attendanceClosed`.
+5. Al final agregar aviso:
+
+```tsx
+{attendanceClosed && !classCompleted && (
+  <p className="font-body text-sm text-on-surface-variant text-center">
+    El periodo para registrar asistencia de esta clase ha finalizado (23:59 hora de Ciudad de
+    México). La lista es de solo lectura.
+  </p>
+)}
+```
+
+### TASK-6.2 — Páginas `coach/attendance/[classId]/page.tsx` y `admin/attendance/[classId]/page.tsx`
+
+Reemplazar el cálculo `isFutureClass` (coach L44-46; admin equivalente) por:
+
+```ts
+import { getMexicoCityDayBounds } from '@/lib/utils/date';
+
+const { start, end } = openClass.classDate
+  ? getMexicoCityDayBounds(openClass.classDate)
+  : { start: new Date(), end: new Date() };
+const now = new Date();
+const isFutureClass = openClass.classDate ? now < start : false; // día calendario futuro
+const attendanceClosed = openClass.classDate ? now > end : false; // pasada la medianoche CDMX
+```
+
+1. Mantener la rama `isFutureClass` existente (aviso "Esta clase aún no ocurre…" + lista de
+   solo lectura).
+2. Pasar la nueva prop: `<AttendanceSheet ... attendanceClosed={attendanceClosed} />`.
+3. Si `attendanceClosed` y `!isFutureClass`, se debe renderizar `AttendanceSheet` (no la rama
+   de futuro) para que el coach vea los estados finales en solo lectura con el aviso.
+
+---
+
+## TASK-7 — TESTS AUTOMATIZADOS
+
+Runner: **vitest** (`pnpm test`). Seguir los patrones de mocks existentes:
+`src/actions/__tests__/cancellation.test.ts` (mock de `@/db`, `@/lib/auth/session`,
+`next/headers`, `next/cache`, `drizzle-orm`) y `src/actions/__tests__/attendance.test.ts`
+(`// @vitest-environment node`).
+
+### TASK-7.1 — `src/lib/utils/__tests__/date-window.test.ts` (nuevo)
+
+1. `isWithinGracePeriod`: min 8 → `true`; min 10 exactos → `true`; min 10 + 1 ms → `false`;
+   `createdAt=null` → `false`.
+2. `getMexicoCityDayBounds('2026-09-15T20:00:00-06:00')` → `start` =
+   `2026-09-15T06:00:00.000Z`, `end` = `2026-09-16T05:59:59.999Z`.
+3. `isAttendanceWindowOpen`: instante `23:30` CDMX del día de clase → `true`;
+   `00:01` CDMX del día siguiente → `false`; `23:00` CDMX del día previo → `false`.
+
+### TASK-7.2 — `src/actions/__tests__/grace-period-cancellation.test.ts` (nuevo)
+
+Usar `vi.useFakeTimers()` + `vi.setSystemTime(...)` con horas CDMX explícitas
+(`-06:00`) y el mock de fila con `createdAt` controlado.
+
+| # | Escenario | Esperado |
+|---|---|---|
+| 1 | `cancelReservationAction`, reserva creada hace **8 min**, clase en **2 h** | `success: true`, se ejecuta `db.transaction` (delete + `days_remaining + 1`), mensaje de tolerancia |
+| 2 | `cancelReservationAction`, reserva creada hace **12 min**, clase en **2 h** | `success: false`, `error: 'LATE_CANCELLATION'`, **sin** refund |
+| 3 | `cancelReservationAction`, reserva creada hace 1 h, clase en **30 h** | `success: true`, refund (regla estándar ≥24 h) |
+| 4 | `confirmLateCancellationAction` confirmado dentro de la gracia (8 min) | `success: true`, refund (no marca `late_cancelled`) |
+| 5 | `cancelGuestAction`, invitado registrado hace **8 min**, clase en **2 h** | `success: true`, `restoreGuestCredit` invocado |
+| 6 | `cancelReservationWithGuestAction`, creada hace **8 min**, clase en **2 h** | `success: true`, cancela titular+invitado y restaura crédito de invitado |
+| 7 | `cancelGuestAction`, creado hace 12 min, clase en **2 h** | `success: false`, `'LATE_CANCELLATION'`, sin refund |
+
+### TASK-7.3 — Extender `src/actions/__tests__/attendance.test.ts`
+
+| # | Escenario (`vi.setSystemTime`) | Esperado |
+|---|---|---|
+| 8 | Clase hoy a las 20:00 CDMX, `now` = **23:30** CDMX del mismo día | `updateAttendanceAction` → `success: true` |
+| 9 | Clase ayer a las 20:00 CDMX, `now` = **00:01** CDMX del día siguiente | `success: false`, error `'El periodo para registrar asistencia de esta clase ha finalizado.'` |
+| 10 | Clase mañana, `now` = hoy 10:00 CDMX | `success: false` (antes del día de la clase) |
+
+> Conservar los tests existentes (Property 23 "Attendance Date Guard"). El test de
+> "clase futura" debe seguir pasando: una clase de un día calendario futuro sigue rechazada.
+
+---
+
+## Comando de Verificación
+
+```bash
+pnpm exec tsc --noEmit
+pnpm exec eslint src/lib/utils/date.ts src/actions/enrollment.ts src/actions/guest.ts \
+  src/actions/coach.ts src/components/client/BookingConfirmationModal.tsx \
+  src/components/client/EnrollWithGuestSection.tsx src/components/client/ClassList.tsx \
+  src/components/coach/AttendanceSheet.tsx \
+  "src/app/(portal)/coach/attendance/[classId]/page.tsx" \
+  "src/app/(portal)/admin/attendance/[classId]/page.tsx"
+pnpm test
+```
+
+> **Nota:** `pnpm lint` global tiene errores preexistentes en archivos no tocados
+> (`AddGuestButton.tsx`, `ClassCalendar.tsx`, `GuestTooltip.tsx`, `Hero.tsx` y tests).
+> Validar al menos con eslint sobre los archivos tocados; reportar `tsc` y `pnpm test` completos.
+
+### Resultado de la verificación
+- `pnpm exec tsc --noEmit` → 0 errores.
+- `pnpm exec eslint <archivos tocados>` → 0 errores / 1 warning preexistente
+  (`consumeGuestCredit` sin usar en `src/actions/guest.ts`, ya presente antes del cambio).
+- `pnpm test` → **58 archivos / 476 tests pasando** (sin fallos). Incluye:
+  - `src/lib/utils/__tests__/date-window.test.ts` (12 tests)
+  - `src/actions/__tests__/grace-period-cancellation.test.ts` (7 tests)
+  - `src/actions/__tests__/attendance.test.ts` (4 tests, ventana fin de día CDMX)
+- Tests existentes ajustados a la nueva semántica (enrollment creado fuera de la ventana de
+  10 min para los casos de late-cancel; clase del mismo día para asistencia):
+  `src/actions/__tests__/cancellation.test.ts`, `src/__tests__/late-cancellation-bug-condition.test.ts`,
+  `src/__tests__/bug-condition-exploration.test.ts`.
+
+## Criterio de Aceptación
+
+- [x] Cancelar dentro de los 10 min posteriores a reservar reembolsa el crédito **aunque la
+      clase sea en menos de 24 h** (titular y flujos de invitado).
+- [x] Cancelar después del min 10 con clase en menos de 24 h → `late_cancelled`, **sin**
+      reembolso, con mensaje de cancelación fuera de tiempo.
+- [x] Cancelar con ≥24 h de anticipación reembolsa el crédito (regla existente intacta).
+- [x] Al reservar aparece un modal obligatorio con nombre de clase, hora y recordatorio de la
+      política de 24 h + tolerancia 10 min; la mutación ocurre **solo** al pulsar
+      "Confirmar Reserva".
+- [x] El pase de lista está habilitado todo el día calendario CDMX de la clase (00:00:00 a
+      23:59:59.999).
+- [x] Pasada la medianoche CDMX del día siguiente, el backend rechaza la asistencia con
+      `El periodo para registrar asistencia de esta clase ha finalizado.` y el frontend
+      muestra los toggles en solo lectura con dicho aviso.
+- [x] Sin migraciones; `createdAt` reutilizado. Sin cambios en `completeClassAction` ni en
+      `EnrollButton.tsx`.
+- [x] `tsc`, tests nuevos + existentes en verde.
+
+## Riesgos / Notas de Implementación
+
+- **CDMX = UTC-6 fijo**: construir fronteras con offset `-06:00` (consistente con
+  `parseDateTimeLocalAsMexicoCity`). No usar métodos locales de `Date`.
+- **`en-CA` + `Intl`** es el patrón ya usado en `date.ts` para obtener `YYYY-MM-DD`; usarlo
+  en `getMexicoCityDayBounds` en vez de `toISOString()` (evita corrimiento por UTC).
+- **`isWithinGracePeriod` inclusivo**: `<= 10` min. La regla de 24 h usa `>= 24` (titular) y
+  `> 24` (invitado) tal como está hoy; no cambiar esa semántica.
+- **Origen de `createdAt`**: usar la fila del enrollment/invitado ya cargada; no agregar
+  queries extra. `null` → sin gracia (fail-safe hacia la regla estricta).
+- **`HAS_GUEST`** se evalúa antes del chequeo de fechas en `cancelReservationAction`; la
+  gracia de reservas con invitado vive en `guest.ts`. No reordenar.
+- **`confirmLate*`**: re-chequear la gracia evita el caso de "abrí el modal a los 9 min y
+  confirmé a los 10:30".
+
+## Follow-up — Clase finalizada editable hasta fin de día
+
+**Estado:** ✅ Ejecutado
+**Problema:** una clase finalizada mostraba *"Esta clase ya fue finalizada. La asistencia no
+puede modificarse."* y bloqueaba los toggles/guardado, aunque aún estuviera dentro del día
+calendario CDMX.
+**Solución (solo frontend, `src/components/coach/AttendanceSheet.tsx`):**
+- `readonly = attendanceClosed` (se quitó `classCompleted`).
+- Botón "Guardar asistencia" visible mientras `!attendanceClosed` (aplica también a clases
+  finalizadas dentro del mismo día).
+- Se eliminó el mensaje bloqueante; ahora `classCompleted && !attendanceClosed` muestra
+  *"Clase finalizada. Puedes modificar la asistencia y guardarla hasta las 23:59 (hora de
+  Ciudad de México)."*, y `attendanceClosed` mantiene el aviso de solo lectura.
+- Texto del diálogo "Finalizar clase" actualizado (ya no dice que no se podrá modificar).
+
+**Backend:** sin cambios. `updateAttendanceAction` no valida el `status` de la clase, así que
+re-guardar una clase finalizada ya funcionaba. `checkAndExpireSubscriptions` no depende de
+`attended`/`absent` (solo de `openClasses.status === 'completed'` y de que existan
+enrollments no cancelados), por lo que editar asistencia post-finalización no altera la
+expiración de suscripciones.
+
+**Test:** `src/components/coach/__tests__/AttendanceSheet.test.tsx` (3 tests) — completada y
+ventana abierta → editable y guardable; completada y ventana cerrada → solo lectura; no
+completada y ventana abierta → guardar + finalizar.
+
+**Verificación:** `tsc --noEmit` 0 errores; eslint 0 errores; `pnpm test` **59 archivos /
+479 tests pasando**.
+
+## Follow-up — Confirmación al cancelar el cupo de una clase
+
+**Estado:** ✅ Ejecutado
+**Requerimiento:** al pulsar "Cancelar" en una reservación, mostrar un modal que pregunte si el
+usuario está segur@ de cancelar su lugar y que muestre los datos de la clase (nombre, fecha/hora
+y coach) antes de ejecutar la cancelación.
+**Solución:**
+- Nuevo `src/components/client/CancelClassConfirmationModal.tsx` (reutiliza `ui/Modal`,
+  `variant="danger"`): pregunta *"¿Estás segur@ de cancelar tu lugar en la clase?"* + tarjeta con
+  nombre (`getClassDisplayName`), fecha/hora (`formatFriendlyDate`) y coach.
+- `src/components/client/ReservationCard.tsx`: nuevo estado `showCancelConfirm`; el botón
+  "Cancelar" ahora abre el modal (`setShowCancelConfirm(true)`) y `handleCancel` (que ejecuta
+  `cancelReservationAction`) solo se dispara desde "Sí, cancelar mi lugar".
+- Los flujos posteriores existentes se conservan: `HAS_GUEST` → `CancelGuestDialog`;
+  `LATE_CANCELLATION` → `CancellationModal` (aviso de cancelación tardía sin reembolso).
+
+**Test:** `src/components/client/__tests__/ReservationCard.test.tsx` (3 tests) — el modal aparece
+con los datos de la clase y **no** se llama la acción; solo se cancela al confirmar; "Volver" no
+cancela.
+
+**Verificación:** `tsc --noEmit` 0 errores; eslint 0 errores; `pnpm test` **60 archivos /
+482 tests pasando**.

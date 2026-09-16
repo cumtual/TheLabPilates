@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { classEnrollments, openClasses, userSubscriptions, payments, subscriptions, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
+import { isWithinGracePeriod } from '@/lib/utils/date';
 import type { ActionResult } from '@/lib/types';
 
 export async function enrollInClassAction(classId: string): Promise<ActionResult> {
@@ -172,6 +173,40 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
 }
 
 
+async function isOpenLabEnrollment(userSubscriptionId: string): Promise<boolean> {
+  const [subRow] = await db
+    .select({ guest: subscriptions.guest })
+    .from(userSubscriptions)
+    .leftJoin(subscriptions, eq(userSubscriptions.subscriptionId, subscriptions.id))
+    .where(eq(userSubscriptions.id, userSubscriptionId));
+
+  return subRow?.guest === true;
+}
+
+async function refundEnrollment(
+  enrollmentId: string,
+  userSubscriptionId: string,
+  isOpenLab: boolean
+): Promise<boolean> {
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(classEnrollments).where(eq(classEnrollments.id, enrollmentId));
+
+      // Open Lab memberships don't use days_remaining — skip increment
+      if (!isOpenLab) {
+        await tx.execute(sql`
+          UPDATE user_suscriptions
+          SET days_remaining = days_remaining + 1
+          WHERE id = ${userSubscriptionId}
+        `);
+      }
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function cancelReservationAction(enrollmentId: string): Promise<ActionResult> {
   const session = await getSession();
   if (!session) {
@@ -253,32 +288,32 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
     return { success: false, error: 'No puedes cancelar una clase que ya pasó.' };
   }
 
-  // Check if ≥24h before class
+  // Check if ≥24h before class OR within the 10-min grace window
   const hoursUntilClass = (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+  const withinGrace = isWithinGracePeriod(enrollment.createdAt);
 
-  if (hoursUntilClass >= 24) {
-    // Timely cancellation: delete enrollment + conditionally refund credit (atomic)
-    try {
-      await db.transaction(async (tx) => {
-        await tx.delete(classEnrollments).where(eq(classEnrollments.id, enrollmentId));
+  if (hoursUntilClass >= 24 || withinGrace) {
+    // Timely or grace cancellation: delete enrollment + refund credit (atomic)
+    const refunded = await refundEnrollment(
+      enrollmentId,
+      enrollment.userSubscriptionId,
+      isOpenLab
+    );
 
-        // Open Lab memberships don't use days_remaining — skip increment
-        if (!isOpenLab) {
-          await tx.execute(sql`
-            UPDATE user_suscriptions
-            SET days_remaining = days_remaining + 1
-            WHERE id = ${enrollment.userSubscriptionId}
-          `);
-        }
-      });
-    } catch {
+    if (!refunded) {
       return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
     }
 
     revalidatePath('/client/reservations');
     revalidatePath('/client');
     revalidatePath('/');
-    return { success: true, message: 'Reservación cancelada. Tu crédito ha sido restaurado.' };
+    return {
+      success: true,
+      message:
+        withinGrace && hoursUntilClass < 24
+          ? 'Cancelada dentro de los 10 minutos de tolerancia. Tu crédito ha sido restaurado.'
+          : 'Reservación cancelada. Tu crédito ha sido restaurado.',
+    };
   } else {
     // Late cancellation: signal to client that confirmation is needed
     return { success: false, error: 'LATE_CANCELLATION', field: 'late' };
@@ -334,6 +369,29 @@ export async function confirmLateCancellationAction(enrollmentId: string): Promi
   // Block cancellation for past classes
   if (new Date(openClass.classDate) < new Date()) {
     return { success: false, error: 'No puedes cancelar una clase que ya pasó.' };
+  }
+
+  // The user may have opened the late-cancel dialog while still inside the grace
+  // window and confirmed after it lapsed. Re-evaluate: ≥24h OR within grace → refund.
+  const hoursUntilClass =
+    (new Date(openClass.classDate).getTime() - Date.now()) / (1000 * 60 * 60);
+
+  if (hoursUntilClass >= 24 || isWithinGracePeriod(enrollment.createdAt)) {
+    const isOpenLab = await isOpenLabEnrollment(enrollment.userSubscriptionId);
+    const refunded = await refundEnrollment(
+      enrollmentId,
+      enrollment.userSubscriptionId,
+      isOpenLab
+    );
+
+    if (!refunded) {
+      return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+    }
+
+    revalidatePath('/client/reservations');
+    revalidatePath('/client');
+    revalidatePath('/');
+    return { success: true, message: 'Reservación cancelada. Tu crédito ha sido restaurado.' };
   }
 
   // Late cancellation: set status to 'late_cancelled', no refund

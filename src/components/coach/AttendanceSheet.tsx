@@ -29,6 +29,8 @@ interface AttendanceSheetProps {
   enrollments: EnrollmentRow[];
   guestEnrollments?: GuestEnrollmentRow[];
   isCompleted: boolean;
+  /** True cuando ya pasó la medianoche CDMX del día de la clase. */
+  attendanceClosed?: boolean;
 }
 
 export function AttendanceSheet({
@@ -36,6 +38,7 @@ export function AttendanceSheet({
   enrollments,
   guestEnrollments = [],
   isCompleted,
+  attendanceClosed = false,
 }: AttendanceSheetProps) {
   // Build ordered entries: each enrollment followed by their guests
   type AttendanceEntry =
@@ -93,6 +96,10 @@ export function AttendanceSheet({
   const [error, setError] = useState<string | null>(null);
   const [classCompleted, setClassCompleted] = useState(isCompleted);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+
+  // Read-only only when the class calendar day is over (past midnight CDMX).
+  // A completed class can still be edited within its calendar day.
+  const readonly = attendanceClosed;
 
   function handleToggle(enrollmentId: string, status: 'attended' | 'absent') {
     setRecords((prev) => ({ ...prev, [enrollmentId]: status }));
@@ -166,7 +173,7 @@ export function AttendanceSheet({
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  disabled={classCompleted || isPending}
+                  disabled={readonly || isPending}
                   onClick={() =>
                     handleToggle(entry.data.enrollmentId, 'attended')
                   }
@@ -181,7 +188,7 @@ export function AttendanceSheet({
                 </button>
                 <button
                   type="button"
-                  disabled={classCompleted || isPending}
+                  disabled={readonly || isPending}
                   onClick={() => handleToggle(entry.data.enrollmentId, 'absent')}
                   className={`min-h-11 min-w-11 px-3 py-2 rounded-lg font-body text-xs font-medium transition-colors ${
                     records[entry.data.enrollmentId] === 'absent'
@@ -217,7 +224,7 @@ export function AttendanceSheet({
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  disabled={classCompleted || isPending}
+                  disabled={readonly || isPending}
                   onClick={() =>
                     handleToggle(entry.data.guestEnrollmentId, 'attended')
                   }
@@ -232,7 +239,7 @@ export function AttendanceSheet({
                 </button>
                 <button
                   type="button"
-                  disabled={classCompleted || isPending}
+                  disabled={readonly || isPending}
                   onClick={() => handleToggle(entry.data.guestEnrollmentId, 'absent')}
                   className={`min-h-11 min-w-11 px-3 py-2 rounded-lg font-body text-xs font-medium transition-colors ${
                     records[entry.data.guestEnrollmentId] === 'absent'
@@ -249,7 +256,7 @@ export function AttendanceSheet({
         )}
       </div>
 
-      {!classCompleted && (
+      {!attendanceClosed && (
         <button
           type="button"
           disabled={isPending}
@@ -260,6 +267,20 @@ export function AttendanceSheet({
         </button>
       )}
 
+      {attendanceClosed && (
+        <p className="font-body text-sm text-on-surface-variant text-center">
+          El periodo para registrar asistencia de esta clase ha finalizado (23:59 hora de Ciudad
+          de México). La lista es de solo lectura.
+        </p>
+      )}
+
+      {classCompleted && !attendanceClosed && (
+        <p className="font-body text-sm text-on-surface-variant text-center">
+          Clase finalizada. Puedes modificar la asistencia y guardarla hasta las 23:59 (hora de
+          Ciudad de México).
+        </p>
+      )}
+
       {!classCompleted && (
         <div className="mt-6 pt-4 border-t border-outline-variant">
           {showCompleteConfirm ? (
@@ -268,7 +289,8 @@ export function AttendanceSheet({
                 ¿Estás seguro de finalizar esta clase?
               </p>
               <p className="font-body text-xs text-on-surface-variant">
-                Una vez finalizada no podrás modificar la asistencia.
+                Aún podrás modificar la asistencia y guardarla hasta las 23:59 (hora de Ciudad de
+                México).
               </p>
               <div className="flex gap-2">
                 <button
@@ -300,12 +322,6 @@ export function AttendanceSheet({
             </button>
           )}
         </div>
-      )}
-
-      {classCompleted && (
-        <p className="font-body text-sm text-on-surface-variant text-center">
-          Esta clase ya fue finalizada. La asistencia no puede modificarse.
-        </p>
       )}
     </div>
   );
