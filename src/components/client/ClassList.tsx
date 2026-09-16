@@ -69,7 +69,11 @@ export function ClassList({ classes }: ClassListProps) {
                 </p>
               </div>
 
-              <EnrollWithGuestSection classId={classItem.id} />
+              <EnrollWithGuestSection
+                classId={classItem.id}
+                classLabel={getClassDisplayName(classItem.classType, classItem.customName)}
+                classDateTime={classItem.classDate}
+              />
             </div>
           </Card>
         );

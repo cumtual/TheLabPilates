@@ -249,7 +249,7 @@ describe('Property 19: Late Cancellation No Refund', () => {
               openClassId: 'class-uuid-123',
               userSubscriptionId: subscriptionId,
               status: 'pending',
-              createdAt: new Date(),
+              createdAt: new Date(Date.now() - 30 * 60 * 1000),
             },
           });
 

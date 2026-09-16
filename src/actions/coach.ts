@@ -6,7 +6,7 @@ import { db } from '@/db';
 import { openClasses, classEnrollments, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
-import { parseDateTimeLocalAsMexicoCity } from '@/lib/utils/date';
+import { parseDateTimeLocalAsMexicoCity, getMexicoCityDayBounds } from '@/lib/utils/date';
 import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-expiration';
 import { getTotalOccupied } from '@/lib/guest/capacity';
 
@@ -49,9 +49,25 @@ export async function updateAttendanceAction(
     return { success: false, error: 'No tienes permisos para esta clase.' };
   }
 
-  // Validate class date is in the past (Req 8.4, 8.5)
-  if (!openClass.classDate || new Date(openClass.classDate) > new Date()) {
-    return { success: false, error: 'No puedes registrar asistencia de una clase futura.' };
+  // Attendance is enabled for the whole class calendar day in America/Mexico_City:
+  // from 00:00:00.000 to 23:59:59.999 of the class date. After midnight (next day)
+  // the period is closed.
+  if (!openClass.classDate) {
+    return { success: false, error: 'Clase no encontrada.' };
+  }
+
+  const { start, end } = getMexicoCityDayBounds(openClass.classDate);
+  const now = new Date();
+
+  if (now < start) {
+    return { success: false, error: 'No puedes registrar asistencia antes del día de la clase.' };
+  }
+
+  if (now > end) {
+    return {
+      success: false,
+      error: 'El periodo para registrar asistencia de esta clase ha finalizado.',
+    };
   }
 
   // Update each enrollment status in both tables

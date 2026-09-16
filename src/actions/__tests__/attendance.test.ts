@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fc from 'fast-check';
 
 // Mock modules before importing the action
@@ -32,41 +32,49 @@ import { updateAttendanceAction } from '../coach';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 
+function mockCoachClass(classDate: Date) {
+  (getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+    sub: 'coach-uuid-123',
+    role: 'coach',
+    email: 'coach@test.com',
+  });
+
+  (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+    id: 'class-uuid-123',
+    coachUserId: 'coach-uuid-123',
+    classDate,
+    status: 'scheduled',
+    capacity: 10,
+  });
+
+  const mockWhere = vi.fn().mockResolvedValue(undefined);
+  const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
+  (db.update as ReturnType<typeof vi.fn>).mockReturnValue({ set: mockSet });
+}
+
 /**
- * Property 23: Attendance Date Guard
+ * Property 23 (updated): Attendance Day Window Guard
  *
- * For any attendance update request, the operation SHALL succeed only if the
- * class's class_date is in the past. Attempting attendance for a future class
+ * Attendance is enabled only during the class calendar day in America/Mexico_City
+ * (00:00:00 to 23:59:59.999). Classes on any other calendar day (past or future)
  * SHALL be blocked with no enrollment statuses modified.
- *
- * **Validates: Requirements 8.4, 8.5**
  */
-describe('Property 23: Attendance Date Guard', () => {
+describe('Property 23: Attendance Day Window Guard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('succeeds only if class_date is in the past', async () => {
+  it('blocks classes outside the class calendar day (past or future)', async () => {
     await fc.assert(
       fc.asyncProperty(
-        // Generate a UUID-like classId
         fc.uuid(),
         // Boolean to decide past vs future class date
         fc.boolean(),
-        // Days offset from now (at least 1 day to avoid boundary)
-        fc.integer({ min: 1, max: 365 }),
+        // Days offset from now (at least 2 days to avoid same-day boundaries)
+        fc.integer({ min: 2, max: 365 }),
         async (classId, isPast, daysOffset) => {
-          // Reset mocks for each iteration
           vi.clearAllMocks();
 
-          // Mock authenticated coach session
-          (getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
-            sub: 'coach-uuid-123',
-            role: 'coach',
-            email: 'coach@test.com',
-          });
-
-          // Build a class date that is clearly in the past or future
           const classDate = new Date();
           if (isPast) {
             classDate.setDate(classDate.getDate() - daysOffset);
@@ -74,36 +82,82 @@ describe('Property 23: Attendance Date Guard', () => {
             classDate.setDate(classDate.getDate() + daysOffset);
           }
 
-          // Mock the class lookup — class exists and belongs to this coach
-          (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
-            id: classId,
-            coachUserId: 'coach-uuid-123',
-            classDate,
-            status: 'scheduled',
-            capacity: 10,
-          });
-
-          // Mock db.update chain for enrollment status updates and class completion
-          const mockWhere = vi.fn().mockResolvedValue(undefined);
-          const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
-          (db.update as ReturnType<typeof vi.fn>).mockReturnValue({ set: mockSet });
+          mockCoachClass(classDate);
 
           const result = await updateAttendanceAction(classId, [
             { enrollmentId: 'enrollment-1', status: 'attended' },
           ]);
 
-          if (isPast) {
-            // Class date is in the past: attendance should succeed
-            expect(result.success).toBe(true);
-            expect(db.update).toHaveBeenCalled();
-          } else {
-            // Class date is in the future: attendance should be blocked
-            expect(result.success).toBe(false);
-            expect(db.update).not.toHaveBeenCalled();
-          }
+          expect(result.success).toBe(false);
+          expect(db.update).not.toHaveBeenCalled();
         }
       ),
       { numRuns: 50 }
     );
+  });
+});
+
+/**
+ * Attendance End-of-Day Window (America/Mexico_City)
+ *
+ * Deterministic cases using fixed CDMX instants:
+ * - Same class day (even before the class start time) → allowed.
+ * - After midnight CDMX of the next day → blocked with the "period finished" message.
+ * - Before the class calendar day → blocked with the "before the class day" message.
+ */
+describe('Attendance End-of-Day Window (CDMX)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('allows attendance at 23:30 CDMX on the class day', async () => {
+    vi.setSystemTime(new Date('2026-09-15T23:30:00-06:00'));
+    mockCoachClass(new Date('2026-09-15T20:00:00-06:00'));
+
+    const result = await updateAttendanceAction('class-uuid-123', [
+      { enrollmentId: 'enrollment-1', status: 'attended' },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(db.update).toHaveBeenCalled();
+  });
+
+  it('blocks attendance after midnight CDMX of the next day', async () => {
+    vi.setSystemTime(new Date('2026-09-16T00:01:00-06:00'));
+    mockCoachClass(new Date('2026-09-15T20:00:00-06:00'));
+
+    const result = await updateAttendanceAction('class-uuid-123', [
+      { enrollmentId: 'enrollment-1', status: 'attended' },
+    ]);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        'El periodo para registrar asistencia de esta clase ha finalizado.'
+      );
+    }
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('blocks attendance before the class calendar day', async () => {
+    vi.setSystemTime(new Date('2026-09-14T10:00:00-06:00'));
+    mockCoachClass(new Date('2026-09-15T20:00:00-06:00'));
+
+    const result = await updateAttendanceAction('class-uuid-123', [
+      { enrollmentId: 'enrollment-1', status: 'attended' },
+    ]);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        'No puedes registrar asistencia antes del día de la clase.'
+      );
+    }
+    expect(db.update).not.toHaveBeenCalled();
   });
 });

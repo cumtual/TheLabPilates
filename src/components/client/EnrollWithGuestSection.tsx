@@ -6,10 +6,15 @@ import { enrollInClassAction } from '@/actions/enrollment';
 import { checkGuestEligibilityAction, enrollWithGuestAction } from '@/actions/guest';
 import { GuestToggle } from './GuestToggle';
 import { GuestNameInput, validateGuestName } from './GuestNameInput';
+import { BookingConfirmationModal } from './BookingConfirmationModal';
 import type { GuestEligibilityResult } from '@/lib/types/guest';
 
 export interface EnrollWithGuestSectionProps {
   classId: string;
+  /** Nombre visible de la clase, para el modal de confirmación. */
+  classLabel: string;
+  /** Fecha/hora de la clase, para el modal de confirmación. */
+  classDateTime: Date | string;
 }
 
 /**
@@ -26,13 +31,14 @@ export interface EnrollWithGuestSectionProps {
  *
  * Requirements: 1.2, 3.1, 3.8, 8.1, 8.2
  */
-export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps) {
+export function EnrollWithGuestSection({ classId, classLabel, classDateTime }: EnrollWithGuestSectionProps) {
   const router = useRouter();
 
   // Enrollment state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Guest eligibility state
   const [eligibility, setEligibility] = useState<GuestEligibilityResult | null>(null);
@@ -83,12 +89,12 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
     }
   }, []);
 
-  // Handle enrollment submission
-  async function handleEnroll() {
+  // Validate the guest name and open the confirmation modal (no mutation yet)
+  function handleRequestEnroll() {
     setError(null);
     setGuestNameError(undefined);
 
-    // If guest is toggled on, validate name before submitting
+    // If guest is toggled on, validate name before asking for confirmation
     if (guestToggled) {
       const trimmedName = guestName.trim();
       const nameValidation = validateGuestName(trimmedName);
@@ -102,6 +108,13 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
       }
     }
 
+    setShowConfirm(true);
+  }
+
+  // Handle enrollment submission (only called after the user confirms in the modal)
+  async function performEnroll() {
+    setError(null);
+    setGuestNameError(undefined);
     setLoading(true);
 
     try {
@@ -171,7 +184,7 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
         )}
         <button
           type="button"
-          onClick={handleEnroll}
+          onClick={handleRequestEnroll}
           disabled={loading}
           className="sm:ml-auto inline-flex items-center justify-center px-4 py-2 min-h-11 min-w-11 font-body text-sm font-semibold uppercase tracking-wider bg-soft-charcoal text-on-primary rounded-DEFAULT transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-soft-charcoal disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
         >
@@ -184,6 +197,18 @@ export function EnrollWithGuestSection({ classId }: EnrollWithGuestSectionProps)
           )}
         </button>
       </div>
+
+      <BookingConfirmationModal
+        isOpen={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={() => {
+          setShowConfirm(false);
+          void performEnroll();
+        }}
+        classLabel={classLabel}
+        classDateTime={classDateTime}
+        isLoading={loading}
+      />
     </div>
   );
 }

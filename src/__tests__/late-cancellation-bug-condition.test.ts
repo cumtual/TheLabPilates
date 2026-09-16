@@ -85,7 +85,7 @@ function setupCancelSelectMock(options: {
       openClassId: 'class-uuid-456',
       userSubscriptionId: 'sub-default',
       status: 'pending',
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
     },
     ownerUserId = 'user-uuid-123',
     isOpenLab = false,
@@ -168,7 +168,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
             openClassId: 'class-uuid-456',
             userSubscriptionId: subscriptionId,
             status: 'pending',
-            createdAt: new Date(),
+            createdAt: new Date(Date.now() - 30 * 60 * 1000),
           });
 
           // Mock class: future date <24h away
@@ -181,7 +181,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
             available: 'available',
             classType: 'mat_pilates',
             status: 'scheduled',
-            createdAt: new Date(),
+            createdAt: new Date(Date.now() - 30 * 60 * 1000),
           });
 
           // Regular subscription, no associated guest → proceeds to the late-cancellation date logic
@@ -234,7 +234,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
             openClassId: 'class-uuid-456',
             userSubscriptionId: subscriptionId,
             status: 'pending',
-            createdAt: new Date(),
+            createdAt: new Date(Date.now() - 30 * 60 * 1000),
           });
 
           // Mock class: future date <24h away
@@ -247,7 +247,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
             available: 'available',
             classType: 'mat_pilates',
             status: 'scheduled',
-            createdAt: new Date(),
+            createdAt: new Date(Date.now() - 30 * 60 * 1000),
           });
 
           // Enrollment + ownership select
@@ -298,7 +298,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
       openClassId: 'class-uuid-789',
       userSubscriptionId: subscriptionId,
       status: 'pending',
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
     });
 
     const classDate = futureDateHoursAhead(4); // 4 hours away — late
@@ -310,7 +310,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
       available: 'available',
       classType: 'mat_pilates',
       status: 'scheduled',
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
     });
 
     // Regular subscription, no associated guest → proceeds to the late-cancellation date logic
@@ -338,7 +338,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
       openClassId: 'class-uuid-789',
       userSubscriptionId: subscriptionId,
       status: 'pending',
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
     });
 
     (db.query.openClasses.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
@@ -349,7 +349,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
       available: 'available',
       classType: 'mat_pilates',
       status: 'scheduled',
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() - 30 * 60 * 1000),
     });
 
     // Enrollment + ownership select
