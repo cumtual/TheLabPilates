@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { CancellationModal } from './CancellationModal';
+import { CancelClassConfirmationModal } from './CancelClassConfirmationModal';
 import { CancelGuestDialog } from './CancelGuestDialog';
 import { AddGuestButton } from './AddGuestButton';
 import { cancelReservationAction, confirmLateCancellationAction } from '@/actions/enrollment';
@@ -43,6 +44,7 @@ export function ReservationCard({
 }: ReservationCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showLateCancelModal, setShowLateCancelModal] = useState(false);
   const [showGuestCancelDialog, setShowGuestCancelDialog] = useState(false);
   const [guestDialogInfo, setGuestDialogInfo] = useState<GuestInfo | null>(null);
@@ -53,6 +55,7 @@ export function ReservationCard({
   const hasGuest = guest !== null;
 
   async function handleCancel() {
+    setShowCancelConfirm(false);
     setLoading(true);
     setError(null);
 
@@ -180,7 +183,7 @@ export function ReservationCard({
           <div className="flex items-center justify-end">
             <button
               type="button"
-              onClick={handleCancel}
+              onClick={() => setShowCancelConfirm(true)}
               disabled={loading}
               className="inline-flex items-center justify-center px-4 py-2 min-h-11 min-w-11 font-body text-sm font-semibold uppercase tracking-wider bg-error/10 text-error border border-error/30 rounded-DEFAULT transition-all duration-200 ease-out hover:bg-error/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -197,6 +200,16 @@ export function ReservationCard({
           )}
         </div>
       </Card>
+
+      {/* Cancel confirmation with class details */}
+      <CancelClassConfirmationModal
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={handleCancel}
+        classLabel={getClassDisplayName(reservation.classType, reservation.customName)}
+        classDateTime={reservation.classDate}
+        coachName={reservation.coachName}
+      />
 
       {/* Standard late cancellation modal (no guest) */}
       <CancellationModal
