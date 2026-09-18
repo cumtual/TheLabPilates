@@ -46,13 +46,13 @@ export default function Home() {
       <main>
         <Hero />
         <Philosophy />
-        <MatPilatesInfo />
-        <Barre />
-        <HathaYoga />
+        <Schedule />
         <Pricing />
         <SpecialEvent />
         <MembershipBenefits />
-        <Schedule />
+        <MatPilatesInfo />
+        <Barre />
+        <HathaYoga />
         <Location />
       </main>
       <Footer />
