@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.0](https://github.com/cumtual/TheLabPilates/compare/v1.13.0...v1.14.0) (2026-09-16)
+
+
+### Features
+
+* implement grace period for cancellations and attendance validation ([d905f88](https://github.com/cumtual/TheLabPilates/commit/d905f8818275f817c21c3bfc98f7b311c3db2492))
+* implement grace period for cancellations and attendance validation ([59fa87f](https://github.com/cumtual/TheLabPilates/commit/59fa87f000248fd3445995d3bc87e05e9607c7d4))
+
 ## [1.13.0](https://github.com/cumtual/TheLabPilates/compare/v1.12.0...v1.13.0) (2026-09-15)
 
 
