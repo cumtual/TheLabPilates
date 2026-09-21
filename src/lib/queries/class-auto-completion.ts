@@ -2,11 +2,12 @@ import { and, eq, lt, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { openClasses } from '@/db/schema';
 import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-expiration';
+import { CLASS_DURATION_MS } from '@/lib/utils/date';
 
 /**
- * Auto-completes classes that have passed their scheduled time plus a 1-hour buffer.
- * Only targets classes with status 'scheduled' — cancelled and already-completed classes
- * are never modified.
+ * Auto-completes classes that have passed their scheduled time plus the class duration
+ * (50 minutes). Only targets classes with status 'scheduled' — cancelled and
+ * already-completed classes are never modified.
  *
  * After marking classes as completed, checks whether any linked subscriptions
  * should be expired (daysRemaining = 0 and all active enrollments in completed classes).
@@ -14,8 +15,8 @@ import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-ex
  * @returns The number of classes that were transitioned to 'completed'.
  */
 export async function autoCompletePassedClasses(): Promise<number> {
-  // 1 hour buffer after classDate (classes last ~1 hour)
-  const bufferTime = new Date(Date.now() - 60 * 60 * 1000);
+  // Class duration buffer after classDate (all classes last 50 minutes)
+  const bufferTime = new Date(Date.now() - CLASS_DURATION_MS);
 
   // Step 1: Query the IDs of classes that should be auto-completed
   const classesToComplete = await db

@@ -10,6 +10,7 @@ import {
   suspendSubscriptionAction,
   reactivateSubscriptionAction,
   refundSessionCreditAction,
+  decrementSubscriptionCreditAction,
   getSubscriptionEnrollmentsAction,
 } from '@/actions/admin';
 
@@ -68,6 +69,9 @@ export function SubscriptionManagement({
   const [confirmSuspendId, setConfirmSuspendId] = useState<string | null>(null);
   const [confirmRefundUserId, setConfirmRefundUserId] = useState<string | null>(null);
   const [confirmRefundName, setConfirmRefundName] = useState<string>('');
+  const [confirmDecrementId, setConfirmDecrementId] = useState<string | null>(null);
+  const [confirmDecrementName, setConfirmDecrementName] = useState<string>('');
+  const [confirmDecrementCredits, setConfirmDecrementCredits] = useState<number>(0);
 
   // Enrollments detail view
   const [expandedSubscription, setExpandedSubscription] = useState<string | null>(null);
@@ -76,6 +80,9 @@ export function SubscriptionManagement({
 
   // Track local status changes for optimistic UI
   const [localStatusState, setLocalStatusState] = useState<Record<string, 'active' | 'suspended' | 'expired'>>({});
+
+  // Track local credit balance for optimistic UI
+  const [localCreditsState, setLocalCreditsState] = useState<Record<string, number>>({});
 
   // Search state with debounce
   const [searchInput, setSearchInput] = useState(currentSearch);
@@ -206,6 +213,35 @@ export function SubscriptionManagement({
       const result = await refundSessionCreditAction(userId);
       if (result.success) {
         setSuccessMessage(result.message ?? 'Crédito otorgado.');
+      } else {
+        setError(result.error);
+      }
+      setPendingAction(null);
+    });
+  }
+
+  function handleDecrementConfirm() {
+    if (!confirmDecrementId) return;
+    setError(null);
+    setSuccessMessage(null);
+    const id = confirmDecrementId;
+    setPendingAction(`decrement-${id}`);
+    setConfirmDecrementId(null);
+    setConfirmDecrementName('');
+    setConfirmDecrementCredits(0);
+
+    startTransition(async () => {
+      const result = await decrementSubscriptionCreditAction(id);
+      if (result.success) {
+        const data = result.data as
+          | { daysRemaining?: number; expired?: boolean }
+          | undefined;
+        const remaining = data?.daysRemaining ?? 0;
+        setLocalCreditsState((prev) => ({ ...prev, [id]: remaining }));
+        if (data?.expired) {
+          setLocalStatusState((prev) => ({ ...prev, [id]: 'expired' }));
+        }
+        setSuccessMessage(result.message ?? 'Crédito descontado.');
       } else {
         setError(result.error);
       }
@@ -360,7 +396,7 @@ export function SubscriptionManagement({
                       )}
                       {!sub.isOpenLab && (
                         <span className="font-body text-sm text-on-surface">
-                          Créditos: {sub.daysRemaining ?? 0}
+                          Créditos: {localCreditsState[sub.subscriptionId] ?? sub.daysRemaining ?? 0}
                         </span>
                       )}
                       {sub.isOpenLab && (
@@ -402,6 +438,27 @@ export function SubscriptionManagement({
                             ? 'Otorgando...'
                             : 'Otorgar Crédito'}
                         </button>
+                        {!sub.isOpenLab && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmDecrementId(sub.subscriptionId);
+                              setConfirmDecrementName(sub.clientName);
+                              setConfirmDecrementCredits(
+                                localCreditsState[sub.subscriptionId] ?? sub.daysRemaining ?? 0
+                              );
+                            }}
+                            disabled={
+                              (localCreditsState[sub.subscriptionId] ?? sub.daysRemaining ?? 0) <= 0 ||
+                              (isPending && pendingAction === `decrement-${sub.subscriptionId}`)
+                            }
+                            className="inline-flex items-center justify-center px-4 py-3 font-body text-sm font-semibold uppercase tracking-wider text-error border border-error/30 rounded-lg transition-all duration-200 ease-out hover:bg-error/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error disabled:opacity-50 disabled:cursor-not-allowed min-h-11 min-w-11"
+                          >
+                            {isPending && pendingAction === `decrement-${sub.subscriptionId}`
+                              ? 'Descontando...'
+                              : 'Descontar Crédito'}
+                          </button>
+                        )}
                       </>
                     ) : effectiveStatus === 'suspended' ? (
                       <button
@@ -515,6 +572,29 @@ export function SubscriptionManagement({
         <p className="mt-2 text-sm text-on-surface-variant">
           Se incrementará en 1 el número de sesiones disponibles en la suscripción activa del usuario.
         </p>
+      </Modal>
+
+      {/* Decrement Confirmation Modal */}
+      <Modal
+        isOpen={confirmDecrementId !== null}
+        onClose={() => { setConfirmDecrementId(null); setConfirmDecrementName(''); setConfirmDecrementCredits(0); }}
+        onConfirm={handleDecrementConfirm}
+        title="Descontar crédito"
+        confirmLabel="Sí, descontar"
+        cancelLabel="Cancelar"
+        variant="danger"
+      >
+        <p>¿Estás seguro de descontar 1 crédito a este usuario?</p>
+        {confirmDecrementName && (
+          <p className="mt-2 text-sm text-on-surface-variant">
+            Usuario: <strong>{confirmDecrementName}</strong>
+          </p>
+        )}
+        {confirmDecrementCredits === 1 && (
+          <p className="mt-2 text-sm text-error">
+            Al llegar a 0 la suscripción se marcará como vencida.
+          </p>
+        )}
       </Modal>
     </div>
   );
