@@ -212,6 +212,18 @@ export function parseDateTimeLocalAsMexicoCity(dateTimeLocal: string): Date {
 /** Tolerancia posreserva para cancelar por error con reembolso íntegro. */
 export const GRACE_PERIOD_MINUTES = 10;
 
+/** Duración oficial de TODAS las clases del estudio (minutos). */
+export const CLASS_DURATION_MINUTES = 50;
+export const CLASS_DURATION_MS = CLASS_DURATION_MINUTES * 60 * 1000;
+
+/**
+ * end_time derivado de una clase: `start + 50 min`.
+ * No existe columna `end_time` en `open_class`; la duración es fija.
+ */
+export function getClassEndTime(classStart: Date): Date {
+  return new Date(classStart.getTime() + CLASS_DURATION_MS);
+}
+
 /**
  * true si `createdAt` está a 10 minutos o menos de `now` (inclusive).
  * `<= 10` → con gracia. `> 10` → sin gracia. `null`/inválido → false (fail-safe).

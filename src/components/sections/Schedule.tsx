@@ -3,15 +3,15 @@ import { openClasses, users, classEnrollments, guestEnrollments } from '@/db/sch
 import { eq, and, gte, lte, count, inArray, notInArray, isNull } from 'drizzle-orm';
 import { ScheduleClient } from './ScheduleClient';
 import { getClassDisplayName } from '@/lib/utils/class-type';
-import { formatTimeWithMeridiem } from '@/lib/utils/date';
+import { formatTimeWithMeridiem, getClassEndTime } from '@/lib/utils/date';
 import { getRollingWeekRange, getRollingDayIndex, getRollingDays } from './schedule-utils';
 
 /**
- * Renders a class time range in America/Mexico_City (single-hour duration).
- * e.g. "07:00 P.M. - 08:00 P.M."
+ * Renders a class time range in America/Mexico_City (50-minute duration).
+ * e.g. "07:00 P.M. - 07:50 P.M."
  */
 function formatClassTimeRange(classStart: Date): string {
-  const classEnd = new Date(classStart.getTime() + 60 * 60 * 1000);
+  const classEnd = getClassEndTime(classStart);
   return `${formatTimeWithMeridiem(classStart)} - ${formatTimeWithMeridiem(classEnd)}`;
 }
 

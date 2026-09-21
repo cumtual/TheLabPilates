@@ -381,6 +381,101 @@ export async function refundSessionCreditAction(
   return { success: true, message: 'Crédito de sesión otorgado.' };
 }
 
+/**
+ * Decrementa en 1 el saldo de créditos (days_remaining) de una suscripción.
+ * Reglas de negocio:
+ * - Open Lab es ilimitado y NO usa créditos → rechazado.
+ * - Sin créditos (<= 0) o ya vencida → rechazado (400-equivalente en ActionResult).
+ * - Al consumir el último crédito (llega a 0) la suscripción transiciona a
+ *   `status = 'expired'` + `active = false` (NUNCA a 'suspended').
+ * El decremento ocurre en una transacción con guard atómico `days_remaining > 0`.
+ */
+export async function decrementSubscriptionCreditAction(
+  subscriptionId: string
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  if (!subscriptionId) {
+    return { success: false, error: 'ID de suscripción no proporcionado.' };
+  }
+
+  const userSub = await db.query.userSubscriptions.findFirst({
+    where: eq(userSubscriptions.id, subscriptionId),
+  });
+
+  if (!userSub) {
+    return { success: false, error: 'Suscripción no encontrada.' };
+  }
+
+  // Open Lab is time-based and does not use days_remaining credits.
+  const plan = await db.query.subscriptions.findFirst({
+    where: eq(subscriptions.id, userSub.subscriptionId),
+  });
+  if (plan?.guest === true) {
+    return { success: false, error: 'Open Lab es ilimitado; no usa créditos.' };
+  }
+
+  if (userSub.status === 'expired') {
+    return { success: false, error: 'La suscripción ya está vencida.' };
+  }
+
+  if ((userSub.daysRemaining ?? 0) <= 0) {
+    return { success: false, error: 'La suscripción no tiene créditos disponibles.' };
+  }
+
+  let newCredits: number;
+  try {
+    newCredits = await db.transaction(async (tx) => {
+      // Decremento atómico con guard: sólo resta si aún hay créditos.
+      const [updated] = await tx
+        .update(userSubscriptions)
+        .set({ daysRemaining: sql`days_remaining - 1` })
+        .where(
+          and(
+            eq(userSubscriptions.id, subscriptionId),
+            gt(userSubscriptions.daysRemaining, 0)
+          )
+        )
+        .returning({ daysRemaining: userSubscriptions.daysRemaining });
+
+      if (!updated) {
+        throw new Error('La suscripción no tiene créditos disponibles.');
+      }
+
+      const remaining = updated.daysRemaining ?? 0;
+
+      // Último crédito consumido → vencida (NUNCA suspendida).
+      if (remaining === 0) {
+        await tx
+          .update(userSubscriptions)
+          .set({ active: false, status: 'expired', expirationDate: new Date() })
+          .where(eq(userSubscriptions.id, subscriptionId));
+      }
+
+      return remaining;
+    });
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'No se pudo descontar el crédito.',
+    };
+  }
+
+  revalidatePath('/admin/subscriptions');
+
+  return {
+    success: true,
+    message:
+      newCredits === 0
+        ? 'Crédito descontado. La suscripción llegó a 0 créditos y fue marcada como vencida.'
+        : `Crédito descontado. Créditos restantes: ${newCredits}.`,
+    data: { daysRemaining: newCredits, expired: newCredits === 0 },
+  };
+}
+
 
 export async function reactivateSubscriptionAction(
   subscriptionId: string
