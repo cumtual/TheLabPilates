@@ -40,7 +40,11 @@ vi.mock('@/lib/email/service', () => ({
   sendClassCancellationEmail: vi.fn(),
 }));
 
-import { suspendSubscriptionAction, refundSessionCreditAction } from '../admin';
+import {
+  suspendSubscriptionAction,
+  refundSessionCreditAction,
+  decrementSubscriptionCreditAction,
+} from '../admin';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
 
@@ -339,5 +343,193 @@ describe('Suspension credits: Open Lab vs credit packages', () => {
 
     expect(result).toHaveProperty('success', true);
     expect(txOperations.filter((op) => op.type === 'execute')).toHaveLength(2);
+  });
+});
+
+/**
+ * Admin credit decrement.
+ *
+ * Decrementing the last credit (days_remaining 1 → 0) MUST transition the
+ * subscription to `expired` (active=false), never `suspended`. Open Lab,
+ * zero/negative balances and already-expired subscriptions are rejected.
+ */
+describe('decrementSubscriptionCreditAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function mockAdminSession(role: string = 'admin') {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sub: 'admin-uuid',
+      role,
+      email: 'admin@test.com',
+    });
+  }
+
+  function mockSubscription(overrides: Record<string, unknown> = {}) {
+    (db.query.userSubscriptions.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'sub-1',
+      userId: 'client-uuid',
+      subscriptionId: 'plan-1',
+      active: true,
+      status: 'active',
+      daysRemaining: 5,
+      ...overrides,
+    });
+  }
+
+  function mockPlan(guest: boolean) {
+    (db.query.subscriptions.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'plan-1',
+      guest,
+    });
+  }
+
+  function mockDecrementTx(returningRow: { daysRemaining: number } | undefined) {
+    const ops: { type: string; data?: unknown }[] = [];
+
+    const mockTxUpdate = vi.fn().mockImplementation(() => {
+      let capturedSet: Record<string, unknown> = {};
+      return {
+        set: vi.fn().mockImplementation((setData: Record<string, unknown>) => {
+          capturedSet = setData;
+          return {
+            where: vi.fn().mockImplementation(() => {
+              ops.push({ type: 'update', data: capturedSet });
+              const base = Promise.resolve();
+              return Object.assign(base, {
+                returning: vi.fn().mockImplementation(() =>
+                  Promise.resolve(returningRow === undefined ? [] : [returningRow])
+                ),
+              });
+            }),
+          };
+        }),
+      };
+    });
+
+    (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (cb: TransactionCallback) => {
+        return cb({ update: mockTxUpdate, execute: vi.fn() });
+      }
+    );
+
+    return ops;
+  }
+
+  it('rejects when there is no session', async () => {
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-admin role', async () => {
+    mockAdminSession('coach');
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown subscription', async () => {
+    mockAdminSession();
+    (db.query.userSubscriptions.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      undefined
+    );
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects Open Lab (unlimited, no credits)', async () => {
+    mockAdminSession();
+    mockSubscription({ daysRemaining: 5 });
+    mockPlan(true);
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an already expired subscription', async () => {
+    mockAdminSession();
+    mockSubscription({ status: 'expired', active: false, daysRemaining: 3 });
+    mockPlan(false);
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a subscription with zero credits', async () => {
+    mockAdminSession();
+    mockSubscription({ daysRemaining: 0 });
+    mockPlan(false);
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it('decrements credits and keeps status when credits remain', async () => {
+    mockAdminSession();
+    mockSubscription({ daysRemaining: 5 });
+    mockPlan(false);
+    const ops = mockDecrementTx({ daysRemaining: 4 });
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', true);
+    expect((result as { data?: { daysRemaining?: number; expired?: boolean } }).data).toEqual({
+      daysRemaining: 4,
+      expired: false,
+    });
+    // Only the decrement update; no status/active mutation.
+    expect(ops).toHaveLength(1);
+    expect(ops[0].data).toHaveProperty('daysRemaining');
+    expect(ops[0].data).not.toHaveProperty('status');
+  });
+
+  it('transitions to expired (never suspended) when the last credit is consumed', async () => {
+    mockAdminSession();
+    mockSubscription({ daysRemaining: 1 });
+    mockPlan(false);
+    const ops = mockDecrementTx({ daysRemaining: 0 });
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', true);
+    expect((result as { data?: { daysRemaining?: number; expired?: boolean } }).data).toEqual({
+      daysRemaining: 0,
+      expired: true,
+    });
+    expect(ops).toHaveLength(2);
+    const expireUpdate = ops[1].data as Record<string, unknown>;
+    expect(expireUpdate.status).toBe('expired');
+    expect(expireUpdate.active).toBe(false);
+    expect(expireUpdate.expirationDate).toBeInstanceOf(Date);
+    expect(expireUpdate.status).not.toBe('suspended');
+  });
+
+  it('rolls back with an error when the guarded update matches nothing (race)', async () => {
+    mockAdminSession();
+    mockSubscription({ daysRemaining: 1 });
+    mockPlan(false);
+    const ops = mockDecrementTx(undefined);
+
+    const result = await decrementSubscriptionCreditAction('sub-1');
+
+    expect(result).toHaveProperty('success', false);
+    // No expired transition happened.
+    expect(ops).toHaveLength(1);
   });
 });

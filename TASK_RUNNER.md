@@ -1482,3 +1482,200 @@ cancela.
 
 **Verificación:** `tsc --noEmit` 0 errores; eslint 0 errores; `pnpm test` **60 archivos /
 482 tests pasando**.
+
+---
+
+# TASK_RUNNER — Decremento Admin de Créditos + Duración de Clases a 50 Minutos
+
+**Estado:** ✅ Ejecutado
+**Prioridad:** Alta (feature administrativo + fix transversal de negocio)
+**Sin migraciones:** `days_remaining`, `active`, `status` ya existen en `user_suscriptions`.
+**Decisiones confirmadas por el usuario:**
+1. Open Lab (`subscriptions.guest === true`) es ilimitado → excluido del decremento (oculto en UI, rechazado en backend).
+2. El buffer de auto-completado de clases también pasa de 60 → 50 min (la clase se marca `completed` 50 min tras su inicio).
+3. Al llegar a 0 créditos se setea `active=false`, `status='expired'` y `expirationDate = new Date()` (consistente con `check-subscription-expiration.ts:110`).
+
+**Orden de ejecución estricto:**
+`BE-01 → BE-02 → UI-01 → FIX-01 → FIX-02 → TEST-01 → VERIFY-01`
+
+**Mapeo de nomenclatura (requerimiento → modelo real):**
+
+| Requerimiento | Modelo real (Drizzle) |
+|---|---|
+| `credits` / saldo de créditos | `userSubscriptions.daysRemaining` (`days_remaining`) |
+| `is_active` | `userSubscriptions.active` (boolean) |
+| `status = 'expired'` | `subscriptionStatusEnum`: `'pending' \| 'active' \| 'suspended' \| 'expired'` |
+| Suscripción "Ilimitada" | `subscriptions.guest === true` (Open Lab) — no usa créditos |
+| `end_time` | **No existe columna**; la duración se deriva por display/lógica (`+ 60 * 60 * 1000`) |
+
+---
+
+## TASK-ADMIN-DECREMENT-CREDIT-API (BE-01)
+
+- **Archivo:** `src/actions/admin.ts` (agregar función nueva después de `refundSessionCreditAction`, L345-382)
+- **Contexto:** replicar guards de `suspendSubscriptionAction` (L269-298): sesión + `role === 'admin'`,
+  `findFirst` sobre `userSubscriptions`, y lookup del plan para excluir Open Lab (`plan?.guest === true`).
+- **Instrucción — `decrementSubscriptionCreditAction(subscriptionId: string): Promise<ActionResult>`:**
+  1. Guard admin (patrón exacto de L272-275): sin sesión o rol distinto → `'No tienes permisos para esta acción.'`.
+  2. `subscriptionId` presente; suscripción existe → si no, `'Suscripción no encontrada.'`.
+  3. Plan `guest === true` → `{ success: false, error: 'Open Lab es ilimitado; no usa créditos.' }`.
+  4. `status === 'expired'` → `{ success: false, error: 'La suscripción ya está vencida.' }` (400-equivalente).
+  5. `(daysRemaining ?? 0) <= 0` → `{ success: false, error: 'La suscripción no tiene créditos disponibles.' }` (400-equivalente).
+  6. **Transacción** (`db.transaction`, patrón de `suspendSubscriptionAction` L316-339):
+     ```ts
+     let newCredits: number | undefined;
+     await db.transaction(async (tx) => {
+       // Decremento atómico con guard (anti race-condition; mismo espíritu que el FOR UPDATE de enrollment.ts)
+       const result = await tx.execute(sql`
+         UPDATE user_suscriptions
+         SET days_remaining = days_remaining - 1
+         WHERE id = ${subscriptionId} AND days_remaining > 0
+         RETURNING days_remaining
+       `);
+       newCredits = (result[0] ?? result.rows?.[0])?.days_remaining as number | undefined;
+       if (newCredits === undefined) {
+         throw new Error('La suscripción no tiene créditos disponibles.'); // rollback
+       }
+       // Último crédito consumido → expired (NUNCA suspended)
+       if (newCredits === 0) {
+         await tx
+           .update(userSubscriptions)
+           .set({ active: false, status: 'expired', expirationDate: new Date() })
+           .where(eq(userSubscriptions.id, subscriptionId));
+       }
+     });
+     ```
+     La función debe envolver el `db.transaction` en `try/catch` y retornar el error capturado como
+     `{ success: false, error }` (patrón de las acciones existentes).
+  7. `revalidatePath('/admin/subscriptions')`.
+  8. Retornar en éxito:
+     ```ts
+     return {
+       success: true,
+       message: newCredits === 0
+         ? 'Crédito descontado. La suscripción llegó a 0 créditos y fue marcada como vencida.'
+         : `Crédito descontado. Créditos restantes: ${newCredits}.`,
+       data: { daysRemaining: newCredits, expired: newCredits === 0 },
+     };
+     ```
+- **Prevención:** NUNCA setear `status: 'suspended'` en este flujo; NO modificar
+  `suspendSubscriptionAction`, `reactivateSubscriptionAction` ni `refundSessionCreditAction`;
+  NO tocar `check-subscription-expiration.ts`.
+- **Verificación:** `pnpm exec tsc --noEmit` + tests de BE-02.
+
+## TASK-ADMIN-DECREMENT-CREDIT-TESTS (BE-02)
+
+- **Archivo:** `src/actions/__tests__/admin-subscription.test.ts` (extender — ya mockea `db`, `getSession`, `revalidatePath`)
+- **Contexto:** seguir el estilo de los tests existentes de `suspendSubscriptionAction`/`refundSessionCreditAction`.
+  El mock de `tx.execute` debe retornar el nuevo `days_remaining`.
+- **Casos mínimos:**
+  1. Sin sesión / rol no-admin → rechazado, cero writes.
+  2. `daysRemaining = 5` → queda en 4, `active`/`status` intactos, `data.expired === false`.
+  3. **`daysRemaining = 1` → queda en 0 Y se ejecuta `set({ active: false, status: 'expired', expirationDate })`** (crítico).
+  4. `daysRemaining = 0` → error, cero writes.
+  5. `status = 'expired'` → error, cero writes.
+  6. Plan Open Lab (`guest: true`) → error, cero writes.
+  7. UPDATE con guard retorna vacío (race) → rollback, error, sin update de status.
+- **Verificación:** `pnpm vitest run src/actions/__tests__/admin-subscription.test.ts`
+
+## TASK-ADMIN-DECREMENT-CREDIT-UI (UI-01)
+
+- **Archivo:** `src/components/admin/SubscriptionManagement.tsx`
+- **Contexto:** botones de acción L380-417 (bloque `effectiveStatus === 'active'`); modales L489-518;
+  `localStatusState` L78; `pendingAction` L65; `handleRefundConfirm` L196-214 como patrón.
+- **Instrucción:**
+  1. Importar `decrementSubscriptionCreditAction` de `@/actions/admin` (junto a las acciones L9-14).
+  2. Estado nuevo: `confirmDecrementId` + `confirmDecrementName` (patrón de refund L69-70) y
+     `localCreditsState: Record<string, number>` para optimistic UI de créditos.
+  3. **Botón "Descontar Crédito"** dentro del bloque `effectiveStatus === 'active'` (junto a
+     "Otorgar Crédito"), visible solo si `!sub.isOpenLab`. Estilo sugerido: borde de error
+     (`text-error border border-error/30`, patrón del botón Rechazar de `PaymentManagement.tsx` L329).
+     `disabled` si `(localCreditsState[id] ?? sub.daysRemaining ?? 0) <= 0` o si el `pendingAction` es el suyo.
+  4. **Modal de confirmación** reutilizando `Modal` de `@/components/ui/Modal`, `variant="danger"`:
+     título "Descontar crédito", `confirmLabel="Sí, descontar"`, `cancelLabel="Cancelar"`,
+     cuerpo: `¿Estás seguro de descontar 1 crédito a este usuario?` + nombre del cliente + nota
+     condicional: si el crédito actual es 1 → *"Al llegar a 0 la suscripción se marcará como vencida."*.
+  5. Handler `handleDecrementConfirm` (patrón de `handleRefundConfirm` L196-214): en éxito,
+     `setLocalCreditsState(prev => ({ ...prev, [id]: result.data.daysRemaining }))`; si
+     `result.data.expired` → `setLocalStatusState(prev => ({ ...prev, [id]: 'expired' }))`.
+  6. El contador de créditos (L363) debe leer `localCreditsState[sub.subscriptionId] ?? sub.daysRemaining ?? 0`.
+- **Prevención:** no mostrar el botón en suscripciones `suspended`/`expired`/`pending`
+  (el bloque `active` ya lo garantiza); Open Lab mantiene "Ilimitadas" sin botón.
+- **Verificación:** `pnpm exec eslint src/components/admin/SubscriptionManagement.tsx` + `pnpm build`.
+
+## TASK-CLASSES-50-MINUTES-CONSTANT (FIX-01)
+
+- **Archivo:** `src/lib/utils/date.ts` (agregar junto a `GRACE_PERIOD_MINUTES`, L213)
+- **Instrucción:**
+  ```ts
+  /** Duración oficial de TODAS las clases del estudio (minutos). */
+  export const CLASS_DURATION_MINUTES = 50;
+  export const CLASS_DURATION_MS = CLASS_DURATION_MINUTES * 60 * 1000;
+  /** end_time derivado: start + 50 min (no existe columna end_time; la duración es fija). */
+  export function getClassEndTime(classStart: Date): Date {
+    return new Date(classStart.getTime() + CLASS_DURATION_MS);
+  }
+  ```
+- **Verificación:** `pnpm exec tsc --noEmit`.
+
+## TASK-CLASSES-50-MINUTES-APPLY (FIX-02)
+
+- **Archivos y rangos exactos:**
+  1. `src/components/sections/Schedule.tsx:11-15` — `formatClassTimeRange`: reemplazar
+     `new Date(classStart.getTime() + 60 * 60 * 1000)` por `getClassEndTime(classStart)`
+     (importar de `@/lib/utils/date`).
+  2. `src/components/sections/SpecialEvent.tsx:8-11` — mismo reemplazo.
+  3. `src/lib/queries/class-auto-completion.ts:18` — `const bufferTime = new Date(Date.now() - CLASS_DURATION_MS);`
+     (importar la constante). Actualizar el comentario: la clase se auto-completa 50 min después de su inicio.
+- **NO tocar (verificado que no son duración de clase):**
+  - `src/actions/auth.ts:156` (expiry de token de reset), `src/lib/auth/rate-limiter.ts:49` (ventana rate-limit),
+    `src/actions/admin.ts:430` (vigencia 30 días de suscripción), `src/db/seed.ts:206` (fecha de pago),
+    `src/actions/enrollment.ts:292,377` y `src/actions/guest.ts:612,824` (ventana 24h de cancelación — regla distinta).
+  - `src/__tests__/preservation-property.test.ts:305` (+60min es garantía de "futuro", no aserción de duración).
+  - Formularios `AdminCreateClassForm` / `CreateClassForm` / `AddEventClassForm` / `EditClassModal`:
+    no tienen input de duración ni `end_time`; nada que cambiar.
+  - `src/db/seed.ts`: las clases solo insertan `classDate` (inicio); sin offset de duración que corregir.
+- **Verificación:** `rg -n "60 \* 60 \* 1000" src` solo debe listar `auth.ts` y `rate-limiter.ts` tras el cambio.
+
+## TASK-CLASSES-50-MINUTES-TESTS (TEST-01)
+
+- **Archivos:**
+  - `src/components/sections/__tests__/schedule-helpers.test.ts` (extender): aserción de rango
+    `"09:30 A.M. - 10:20 A.M."` (50 min exactos, cruce de hora).
+  - `src/lib/utils/__tests__/class-duration.test.ts` (crear): `getClassEndTime` → 09:30 → 10:20;
+    16:20 → 17:10; y `CLASS_DURATION_MINUTES === 50`.
+  - `src/lib/queries/__tests__/class-auto-completion.test.ts` (crear): clase con
+    `classDate = now - 49min` → NO se auto-completa; `now - 51min` → SÍ se auto-completa.
+- **Verificación:** `pnpm vitest run src/components/sections src/lib/utils src/lib/queries`
+
+## TASK-VERIFY-01 — Verificación final
+
+```bash
+pnpm exec tsc --noEmit
+pnpm exec eslint src/actions/admin.ts src/components/admin/SubscriptionManagement.tsx \
+  src/lib/utils/date.ts src/components/sections/Schedule.tsx \
+  src/components/sections/SpecialEvent.tsx src/lib/queries/class-auto-completion.ts
+pnpm test
+pnpm build
+```
+
+### Criterio de Aceptación
+- [ ] Admin descuenta 1 crédito con confirmación; con 1 crédito restante la suscripción pasa a
+      `status='expired'` + `active=false` + `expirationDate` (NUNCA `suspended`).
+- [ ] Botón deshabilitado con 0 créditos / suscripción vencida; backend rechaza con error (400-equivalente).
+- [ ] Open Lab no muestra el botón y el backend lo rechaza.
+- [ ] Decremento dentro de transacción con guard atómico `days_remaining > 0`.
+- [ ] Toda clase renderiza fin = inicio + 50 min (9:30→10:20, 16:20→17:10) en landing y eventos.
+- [ ] Auto-completado dispara a los 50 min, no a los 60.
+- [x] `tsc`, `eslint` (archivos tocados), `pnpm test` y `pnpm build` en verde.
+
+### Resultado de la verificación
+- `pnpm exec tsc --noEmit` → 0 errores.
+- `pnpm exec eslint <archivos tocados>` → 0 errores / 0 warnings.
+- `pnpm test` → **62 archivos / 498 tests pasando** (+9 tests nuevos: 8 de decremento, 7 nuevos repartidos entre duración y auto-completado; archivo de suscripción pasó de 6 a 14).
+- `pnpm build` → **Compiled successfully** (Next.js 16.3.5, Turbopack).
+
+**Nota de implementación:** el decremento usa el query builder de Drizzle
+(`tx.update(...).set({ daysRemaining: sql\`days_remaining - 1\` }).where(and(eq(id), gt(daysRemaining, 0))).returning(...)`)
+en lugar de SQL crudo con `RETURNING`, por ser idiomático y type-safe; mantiene el guard atómico
+anti race-condition y la transacción.

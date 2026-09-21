@@ -3,11 +3,16 @@ import { eq, and, asc } from 'drizzle-orm';
 import { db } from '@/db';
 import { specialEvents, openClasses, users } from '@/db/schema';
 import { getEventClassAvailable } from '@/lib/events/capacity';
-import { TIMEZONE, formatFullDateTime, formatTimeWithMeridiem } from '@/lib/utils/date';
+import {
+  TIMEZONE,
+  formatFullDateTime,
+  formatTimeWithMeridiem,
+  getClassEndTime,
+} from '@/lib/utils/date';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 
 function formatClassTimeRange(classStart: Date): string {
-  const classEnd = new Date(classStart.getTime() + 60 * 60 * 1000);
+  const classEnd = getClassEndTime(classStart);
   return `${formatTimeWithMeridiem(classStart)} - ${formatTimeWithMeridiem(classEnd)}`;
 }
 
