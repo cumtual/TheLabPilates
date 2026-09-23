@@ -5,14 +5,11 @@ import {
   userSubscriptions,
   payments,
   subscriptions,
-  classEnrollments,
-  openClasses,
-  users,
   specialEvents,
   specialEventRegistrations,
   debitCards,
 } from '@/db/schema';
-import { eq, desc, and, gt } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
@@ -22,6 +19,8 @@ import { formatFullDateTime } from '@/lib/utils/date';
 import { getGuestCreditsForCycle } from '@/lib/guest/credits';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 import { getPendingTransferPayments } from '@/lib/queries/pending-transfers';
+import { getNextClassWithCheckin } from '@/lib/queries/next-class';
+import { CheckinQrButton } from '@/components/client/CheckinQrButton';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -127,35 +126,6 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
   return { type: 'none' };
 }
 
-async function getNextClass(userId: string) {
-  const now = new Date();
-
-  const result = await db
-    .select({
-      classDate: openClasses.classDate,
-      classType: openClasses.classType,
-      customName: openClasses.customName,
-      coachName: users.username,
-    })
-    .from(classEnrollments)
-    .innerJoin(userSubscriptions, eq(classEnrollments.userSubscriptionId, userSubscriptions.id))
-    .innerJoin(openClasses, eq(classEnrollments.openClassId, openClasses.id))
-    .leftJoin(users, eq(openClasses.coachUserId, users.id))
-    .where(
-      and(
-        eq(userSubscriptions.userId, userId),
-        eq(classEnrollments.status, 'pending'),
-        eq(openClasses.status, 'scheduled'),
-        gt(openClasses.classDate, now)
-      )
-    )
-    .orderBy(openClasses.classDate)
-    .limit(1);
-
-  if (result.length === 0) return null;
-  return result[0];
-}
-
 async function getAvailableSpecialEvent(userId: string) {
   const active = await db.query.specialEvents.findFirst({
     where: eq(specialEvents.status, 'active'),
@@ -177,14 +147,14 @@ export default async function ClientDashboardPage() {
 
   let state: SubscriptionState;
   let error = false;
-  let nextClass: Awaited<ReturnType<typeof getNextClass>> = null;
+  let nextClass: Awaited<ReturnType<typeof getNextClassWithCheckin>> = null;
   let availableEvent: Awaited<ReturnType<typeof getAvailableSpecialEvent>> = null;
   let pendingTransfers: Awaited<ReturnType<typeof getPendingTransferPayments>> = [];
   let bankInfo: { cardBank: string; cardName: string; cardNumber: string } | null = null;
 
   try {
     state = await getSubscriptionState(session.sub);
-    nextClass = await getNextClass(session.sub);
+    nextClass = await getNextClassWithCheckin(session.sub);
     availableEvent = await getAvailableSpecialEvent(session.sub);
   } catch {
     error = true;
@@ -261,6 +231,17 @@ export default async function ClientDashboardPage() {
               <p className="font-body text-sm text-on-surface-variant">
                 Coach: {nextClass.coachName}
               </p>
+            )}
+            {nextClass.checkin && (
+              <CheckinQrButton
+                key={nextClass.enrollmentId}
+                enrollmentId={nextClass.enrollmentId}
+                qrDataUrl={nextClass.checkin.qrDataUrl}
+                className={getClassDisplayName(nextClass.classType, nextClass.customName)}
+                classDateLabel={
+                  nextClass.classDate ? formatFullDateTime(new Date(nextClass.classDate), false) : 'Sin fecha'
+                }
+              />
             )}
           </div>
         </Card>

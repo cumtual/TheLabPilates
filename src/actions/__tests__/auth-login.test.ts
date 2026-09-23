@@ -47,6 +47,7 @@ vi.mock('next/headers', () => ({
 import { loginAction } from '../auth';
 import { db } from '@/db';
 import { hashPassword } from '@/lib/auth/password';
+import { redirect } from 'next/navigation';
 
 /**
  * Property 5: Generic Error on Invalid Credentials
@@ -104,4 +105,51 @@ describe('Property 5: Generic Error on Invalid Credentials', () => {
       { numRuns: 5 } // bcrypt is slow, keep runs low
     );
   });
+});
+
+/**
+ * Login with ?redirect= (QR check-in flow, TASK-QR-BE-09)
+ *
+ * A coach who scans a QR without a session is sent to /login?redirect=/check-in?token=…
+ * and must land back on the check-in page after logging in. Only internal paths are
+ * honored; anything else falls back to the role dashboard (no open redirect).
+ */
+describe('loginAction: safe post-login redirect', () => {
+  let passwordHash: string;
+  const token = 'a'.repeat(64);
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    passwordHash ??= await hashPassword('secret-password');
+    (db.query.users.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'coach-1',
+      email: 'coach@test.com',
+      password: passwordHash,
+      role: 'coach',
+      emailVerified: true,
+      deletedAt: null,
+    });
+  });
+
+  function loginForm(redirectTo?: string) {
+    const formData = new FormData();
+    formData.set('email', 'coach@test.com');
+    formData.set('password', 'secret-password');
+    if (redirectTo !== undefined) formData.set('redirect', redirectTo);
+    return formData;
+  }
+
+  it('returns to the check-in page after login', { timeout: 30000 }, async () => {
+    await loginAction(null, loginForm(`/check-in?token=${token}`));
+    expect(redirect).toHaveBeenCalledWith(`/check-in?token=${token}`);
+  });
+
+  it.each([undefined, '', '//evil.com', 'https://evil.com'])(
+    'falls back to the role dashboard when redirect is %j',
+    { timeout: 30000 },
+    async (redirectTo) => {
+      await loginAction(null, loginForm(redirectTo));
+      expect(redirect).toHaveBeenCalledWith('/coach');
+    }
+  );
 });

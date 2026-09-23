@@ -420,6 +420,7 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
   });
 
   it('success: transaction is called with insert + decrement; failure: no transaction', async () => {
+    const bookedTokens: string[] = [];
     await fc.assert(
       fc.asyncProperty(
         fc.uuid(),
@@ -472,11 +473,15 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
           // Track transaction callback execution
           let txInsertCalled = false;
           let txExecuteCalled = false;
+          let txInsertValues: Record<string, unknown> | undefined;
 
           (db.transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (cb: (tx: unknown) => Promise<void>) => {
             const mockTx = {
               insert: vi.fn().mockReturnValue({
-                values: vi.fn().mockResolvedValue(undefined),
+                values: vi.fn((values: Record<string, unknown>) => {
+                  txInsertValues = values;
+                  return Promise.resolve(undefined);
+                }),
               }),
               execute: vi.fn().mockResolvedValue(undefined),
               // Duplicate re-check inside the transaction: tx.select().from().innerJoin().where()
@@ -505,10 +510,17 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
           // Both insert (new enrollment) and execute (decrement days_remaining) must have been called
           expect(txInsertCalled).toBe(true);
           expect(txExecuteCalled).toBe(true);
+
+          // The new enrollment carries its single-use QR check-in token
+          expect(txInsertValues?.checkinToken).toMatch(/^[0-9a-f]{64}$/);
+          bookedTokens.push(txInsertValues?.checkinToken as string);
         }
       ),
       { numRuns: 30 }
     );
+
+    // Every booking gets a distinct token
+    expect(new Set(bookedTokens).size).toBe(bookedTokens.length);
   });
 
   it('failure scenario: no transaction when prerequisites fail', async () => {
