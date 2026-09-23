@@ -8,6 +8,7 @@ import { users, passwordResets } from '@/db/schema';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { createSession, destroySession } from '@/lib/auth/session';
 import { loginRateLimiter, passwordResetRateLimiter } from '@/lib/auth/rate-limiter';
+import { safeRedirectPath } from '@/lib/auth/safe-redirect';
 import { sendPasswordResetEmail, sendVerificationEmail } from '@/lib/email/service';
 import type { ActionResult } from '@/lib/types';
 
@@ -57,9 +58,9 @@ export async function loginAction(_prevState: ActionResult | null, formData: For
   loginRateLimiter.reset(email.toLowerCase());
   await createSession(user.id, user.role, user.email);
 
-  // Redirect to role-specific portal
+  // Redirect to the requested internal page (e.g. QR check-in) or the role-specific portal
   const dashboard = user.role === 'admin' ? '/admin' : user.role === 'coach' ? '/coach' : '/client';
-  redirect(dashboard);
+  redirect(safeRedirectPath(formData.get('redirect')) ?? dashboard);
 }
 
 export async function registerAction(_prevState: ActionResult | null, formData: FormData): Promise<ActionResult> {

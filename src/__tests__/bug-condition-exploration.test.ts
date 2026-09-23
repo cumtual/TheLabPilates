@@ -129,6 +129,7 @@ vi.mock('@/db', () => {
       },
       update: mockUpdate,
       select: mockSelect,
+      transaction: vi.fn(),
     },
   };
 });
@@ -181,6 +182,16 @@ describe('Bug 3: updateAttendanceAction Should NOT Change Class Status', () => {
       return { where: mockWhere };
     });
     (db.update as ReturnType<typeof vi.fn>).mockReturnValue({ set: mockSet });
+
+    // Membership check (titular enrollments, then guests) and the write transaction
+    (db.select as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce({
+        from: () => ({ where: vi.fn().mockResolvedValue([{ id: 'enrollment-1', status: 'pending' }]) }),
+      })
+      .mockReturnValueOnce({ from: () => ({ where: vi.fn().mockResolvedValue([]) }) });
+    (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (cb: (tx: unknown) => Promise<unknown>) => cb(db)
+    );
 
     const result = await updateAttendanceAction('class-id-123', [
       { enrollmentId: 'enrollment-1', status: 'attended' },

@@ -224,6 +224,12 @@ export const classEnrollments = pgTable(
       }),
     status: enrollmentStatusEnum('status').default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    // QR check-in — applied with manual SQL: sql/manual/2026-09-22_001_qr_checkin_columns.sql
+    // Single-use token, valid only while status = 'pending'; NULL after attended/absent.
+    checkinToken: varchar('checkin_token', { length: 64 }).unique(
+      'class_enrolleds_checkin_token_unique'
+    ),
+    checkedInAt: timestamp('checked_in_at', { withTimezone: true }),
   },
   (table) => ({
     uniqueEnrollment: uniqueIndex('uk_class_user_enrollment').on(

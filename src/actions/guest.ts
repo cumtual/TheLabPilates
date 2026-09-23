@@ -15,6 +15,7 @@ import { isUserOpenLabEligible } from '@/lib/guest/eligibility';
 import { getGuestCreditsForCycle, consumeGuestCredit, restoreGuestCredit } from '@/lib/guest/credits';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import { isWithinGracePeriod } from '@/lib/utils/date';
+import { generateCheckinToken } from '@/lib/checkin/token';
 import type { GuestEligibilityResult } from '@/lib/types/guest';
 import type { ActionResult } from '@/lib/types';
 
@@ -243,6 +244,7 @@ export async function enrollWithGuestAction(
         openClassId: classId,
         userSubscriptionId: userSubscriptionId,
         status: 'pending',
+        checkinToken: generateCheckinToken(),
       });
 
       // Insert guest enrollment

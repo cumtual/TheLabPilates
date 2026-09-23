@@ -1,6 +1,6 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { openClasses, classEnrollments, guestEnrollments } from '@/db/schema';
@@ -14,6 +14,9 @@ interface AttendanceRecord {
   enrollmentId: string;
   status: 'attended' | 'absent';
 }
+
+/** Only these enrollments can be (re)marked; cancellations are never reactivated. */
+const MARKABLE_ENROLLMENT_STATUSES = new Set<string>(['pending', 'attended', 'absent']);
 
 export async function updateAttendanceAction(
   classId: string,
@@ -70,21 +73,58 @@ export async function updateAttendanceAction(
     };
   }
 
-  // Update each enrollment status in both tables
-  // Guest enrollment IDs are in guestEnrollments table, not classEnrollments
-  for (const record of records) {
-    // Update classEnrollments (for regular enrollments)
-    await db
-      .update(classEnrollments)
-      .set({ status: record.status })
-      .where(eq(classEnrollments.id, record.enrollmentId));
+  // Every record must belong to THIS class (titular or guest) and still be markable.
+  // Prevents writing enrollments of other classes and reactivating cancellations.
+  const enrollmentIds = records.map((record) => record.enrollmentId);
+  const [titulares, guests] = await Promise.all([
+    db
+      .select({ id: classEnrollments.id, status: classEnrollments.status })
+      .from(classEnrollments)
+      .where(and(inArray(classEnrollments.id, enrollmentIds), eq(classEnrollments.openClassId, classId))),
+    db
+      .select({ id: guestEnrollments.id, status: guestEnrollments.status })
+      .from(guestEnrollments)
+      .where(and(inArray(guestEnrollments.id, enrollmentIds), eq(guestEnrollments.openClassId, classId))),
+  ]);
 
-    // Also update guestEnrollments (for guest enrollments)
-    await db
-      .update(guestEnrollments)
-      .set({ status: record.status })
-      .where(eq(guestEnrollments.id, record.enrollmentId));
+  const statusById = new Map([...titulares, ...guests].map((row) => [row.id, row.status]));
+  const allMarkable = records.every((record) =>
+    MARKABLE_ENROLLMENT_STATUSES.has(statusById.get(record.enrollmentId) ?? '')
+  );
+  if (!allMarkable) {
+    return {
+      success: false,
+      error: 'Algunos registros no pertenecen a esta clase o ya no están activos. Recarga la página.',
+    };
   }
+
+  const titularIds = new Set(titulares.map((row) => row.id));
+
+  await db.transaction(async (tx) => {
+    for (const record of records) {
+      if (titularIds.has(record.enrollmentId)) {
+        // Keep QR check-in consistent: attended keeps the first check-in time,
+        // absent clears it; either way the single-use QR token is voided.
+        await tx
+          .update(classEnrollments)
+          .set(
+            record.status === 'attended'
+              ? {
+                  status: 'attended',
+                  checkedInAt: sql`coalesce(${classEnrollments.checkedInAt}, now())`,
+                  checkinToken: null,
+                }
+              : { status: 'absent', checkedInAt: null, checkinToken: null }
+          )
+          .where(and(eq(classEnrollments.id, record.enrollmentId), eq(classEnrollments.openClassId, classId)));
+      } else {
+        await tx
+          .update(guestEnrollments)
+          .set({ status: record.status })
+          .where(and(eq(guestEnrollments.id, record.enrollmentId), eq(guestEnrollments.openClassId, classId)));
+      }
+    }
+  });
 
   return { success: true, message: 'Asistencia registrada exitosamente.' };
 }

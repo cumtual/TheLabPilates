@@ -1,3 +1,370 @@
+# TASK-QR-CHECKIN — Asistencia a Clases mediante Código QR
+
+**Estado:** ✅ Ejecutado (2026-09-23). Suite: 653/653 tests, `tsc` limpio, `pnpm build` OK y `pnpm lint` sin errores en los archivos de este feature. **Pendiente (usuario):** TASK-QR-DB-03 y el E2E manual de TASK-QR-VERIFY-01.
+**Decisiones confirmadas:**
+- **D1:** `authInterrupts` es experimental en Next 16, así que **no** se activó; el rol `client` ve una vista 403 inline.
+- **D2:** el coach solo registra asistencia de sus propias clases; el admin, de cualquiera.
+- **D3:** la clase se muestra hasta que termina.
+- **D4:** el cierre automático aplica solo desde el go-live.
+- **D5:** se usa `qrcode`.
+- **D6 y D7:** se implementaron con la recomendación.
+**Especificación:** `SPEC-QR-CHECKIN.md`
+**Runner:** Vitest. `pnpm test <ruta>` equivale a `vitest run <ruta>`. Los mocks de `@/db` y `@/lib/auth/session` siguen el patrón de `src/actions/__tests__/*`.
+**Restricción de BD:** ninguna tarea ejecuta comandos contra la BD. Los scripts SQL los ejecuta el usuario (`TASK-QR-DB-03`).
+
+## Reglas de ejecución
+
+1. 🔴 **RED:** escribir los tests y correr el comando de verificación. **Deben fallar** por la razón esperada, no por errores de sintaxis o de import.
+2. 🟢 **GREEN:** implementación mínima hasta que el comando pase.
+3. 🔵 **REFACTOR:** limpiar con los tests en verde y volver a correr el comando.
+4. Una tarea está terminada cuando su comando pasa y `pnpm exec tsc --noEmit` no reporta errores nuevos.
+5. Los tests de Route Handlers y de archivos SQL usan `// @vitest-environment node`, porque el default del proyecto es `jsdom`.
+6. El tiempo se controla con `vi.useFakeTimers()` y `vi.setSystemTime()`, usando fechas con offset `-06:00`.
+
+## Matriz de trazabilidad (casos obligatorios)
+
+| Caso obligatorio | Tareas | Archivos de test |
+|---|---|---|
+| Generación de token | DB-01, BE-01, BE-02, BE-03 | `qr-checkin-migration.test.ts`, `token.test.ts`, `ensure-token.test.ts`, `enrollment*.test.ts`, `guest.test.ts` |
+| Validación coach/admin | BE-04, BE-05, FE-01 | `process-checkin.test.ts`, `api/check-in/__tests__/route.test.ts`, `check-in/__tests__/page.test.tsx` |
+| Bloqueo 403 a clientes | BE-04, BE-05, FE-01 | Los mismos de la fila anterior |
+| Reuso de token | BE-04, BE-05, FE-01 | `process-checkin.test.ts`, `route.test.ts`, `CheckInProcessor.test.tsx` |
+| Expiración a `absent` | BE-07 | `attendance-auto-close.test.ts`, `cron/complete-classes/__tests__/route.test.ts` |
+
+## Orden y dependencias
+
+`DOC-01 → DEP-01 → DB-01 → DB-02 → BE-01 → BE-02 → BE-03 → BE-04 → BE-05 → BE-06 → BE-07 → BE-08 → BE-09 → FE-01 → FE-02 → FE-03 → VERIFY-01 → DB-03 (🔒 usuario, antes del deploy)`
+
+---
+
+## TASK-QR-DOC-01 — Corregir las reglas de BD en `CLAUDE.md`
+
+- **Tipo:** Docs (sin tests)
+- **Archivos:** `CLAUDE.md`
+- **Descripción:**
+  - Reemplazar "Schema changes: edit `schema.ts` → `pnpm db:generate` → commit SQL" por la regla real: la BD viva **no** usa Drizzle Migrations. Los cambios se hacen con SQL manual, aditivo e idempotente en `sql/manual/`, y los ejecuta el usuario.
+  - Declarar prohibidos `db:push`, `db:migrate`, `drizzle-kit push --force`, `DROP`, `TRUNCATE` y cualquier alteración destructiva.
+  - Marcar `db:push` y `db:migrate` en el cheatsheet con "⛔ no usar contra la BD viva".
+- **Verificación:** las menciones a `db:push` y `db:migrate` solo deben aparecer junto a la advertencia.
+  ```bash
+  rg -n "sql/manual|db:push|db:migrate" CLAUDE.md
+  ```
+
+## TASK-QR-DEP-01 — Dependencia para generar el QR (D5)
+
+- **Tipo:** Dependencias
+- **Archivos:** `package.json`, `pnpm-lock.yaml`
+- **Descripción:** `pnpm add qrcode` y `pnpm add -D @types/qrcode`. La librería no tiene scripts de instalación.
+- **Verificación:**
+  ```bash
+  pnpm ls qrcode @types/qrcode
+  ```
+
+## TASK-QR-DB-01 — Scripts SQL manuales y test de seguridad de la migración
+
+- **Tipo:** Base de datos (test-first)
+- **Archivos:** `sql/manual/2026-09-22_001_qr_checkin_columns.sql` (nuevo), `sql/manual/2026-09-22_002_qr_checkin_backfill.sql` (nuevo), `src/db/__tests__/qr-checkin-migration.test.ts` (nuevo)
+- **Descripción:** copiar los scripts de SPEC §3.2 y §8.2. El test lee los archivos con `fs`, quita los comentarios `--` y normaliza espacios y mayúsculas antes de verificar.
+- **🔴 Tests:**
+  - [x] `001` contiene `ADD COLUMN IF NOT EXISTS checkin_token varchar(64)` y `ADD COLUMN IF NOT EXISTS checked_in_at timestamptz`.
+  - [x] `001` crea `class_enrolleds_checkin_token_unique` dentro de un guard `IF NOT EXISTS (SELECT 1 FROM pg_constraint …)`.
+  - [x] Ambos scripts van dentro de `BEGIN; … COMMIT;` y fijan `SET LOCAL lock_timeout`.
+  - [x] Ningún script contiene, fuera de comentarios, `DROP`, `TRUNCATE`, `DELETE`, `ALTER TYPE`, `RENAME`, `SET NOT NULL`, `ALTER COLUMN` ni `CASCADE`.
+  - [x] `002` es un único `UPDATE` que solo asigna `checkin_token`. Su `WHERE` incluye `checkin_token IS NULL`, `status = 'pending'`, `oc.status = 'scheduled'` y `class_date > now()`.
+  - [x] `002` genera los tokens con `gen_random_uuid()`, sin depender de `pgcrypto`.
+- **🟢 GREEN:** crear los dos archivos SQL.
+- **Verificación:**
+  ```bash
+  pnpm test src/db/__tests__/qr-checkin-migration.test.ts
+  ```
+
+## TASK-QR-DB-02 — Schema de Drizzle: `checkinToken` y `checkedInAt`
+
+- **Tipo:** Base de datos (schema)
+- **Archivos:** `src/db/schema.ts`, `src/db/__tests__/schema-checkin.test.ts` (nuevo)
+- **Descripción:** agregar las dos columnas según SPEC §3.4. **No correr `pnpm db:generate`.**
+- **🔴 Tests** (con `getTableConfig(classEnrollments)` de `drizzle-orm/pg-core`):
+  - [x] `checkin_token`: `PgVarchar`, `length` 64, nullable, `isUnique` y `uniqueName === 'class_enrolleds_checkin_token_unique'`.
+  - [x] `checked_in_at`: `PgTimestamp` con `withTimezone: true`, nullable y sin default.
+  - [x] Las columnas existentes siguen intactas: `id`, `open_class_id`, `user_suscription_id`, `status` con default `'pending'` y `created_at`. El índice `uk_class_user_enrollment` sigue presente.
+  - [x] `enrollmentStatusEnum.enumValues` es exactamente `['pending','attended','absent','late_cancelled','cancelled']`.
+- **Verificación:**
+  ```bash
+  pnpm test src/db/__tests__/schema-checkin.test.ts && pnpm exec tsc --noEmit
+  ```
+
+## TASK-QR-BE-01 — Utilidades de token, URL y QR
+
+- **Tipo:** Backend (dominio puro)
+- **Archivos:** `src/lib/checkin/token.ts`, `src/lib/checkin/qr.ts`, `src/lib/checkin/constants.ts` (todos nuevos); tests en `src/lib/checkin/__tests__/token.test.ts` y `qr.test.ts`
+- **Descripción:**
+  - `generateCheckinToken()` usa `randomBytes(32).toString('hex')`.
+  - `isValidCheckinToken(value: unknown)` valida el formato.
+  - `buildCheckinUrl(token, baseUrl = process.env.NEXT_PUBLIC_APP_URL)` arma la URL del QR.
+  - `buildCheckinQrDataUrl(url)` usa `qrcode.toString(url, { type: 'svg', errorCorrectionLevel: 'M', margin: 1 })` y lo convierte en data URL.
+  - `constants.ts` define `CHECKIN_TOKEN_REGEX`, `CHECKIN_STATUS_POLL_MS = 3000`, `CHECKIN_STATUS_POLL_MAX_MS = 900000` y `ATTENDANCE_AUTO_CLOSE_FROM`.
+- **🔴 Tests:**
+  - [x] `generateCheckinToken()` cumple `^[0-9a-f]{64}$`.
+  - [x] 10 000 tokens generados son únicos.
+  - [x] `isValidCheckinToken` devuelve `true` para tokens generados y `false` para `''`, `null`, `undefined`, 63 o 65 caracteres, hex en mayúsculas, espacios y caracteres no hex.
+  - [x] Propiedad con `fast-check`: todo string que no cumple el regex da `false`.
+  - [x] `buildCheckinUrl(t, 'https://app.mx/')` da `https://app.mx/check-in?token=<t>` (sin `//`). Con una base vacía o `undefined` lanza un error.
+  - [x] `buildCheckinQrDataUrl(url)` empieza con `data:image/svg+xml` y el SVG decodificado contiene `<svg`.
+- **Verificación:**
+  ```bash
+  pnpm test src/lib/checkin/__tests__/token.test.ts src/lib/checkin/__tests__/qr.test.ts
+  ```
+
+## TASK-QR-BE-02 — `ensureCheckinToken` (fallback en runtime)
+
+- **Tipo:** Backend (BD)
+- **Archivos:** `src/lib/checkin/ensure-token.ts`, `src/lib/checkin/__tests__/ensure-token.test.ts` (nuevos)
+- **Descripción:** un único `UPDATE` condicional (SPEC §4); no necesita transacción explícita.
+- **🔴 Tests** (con `@/db` mockeado):
+  - [x] Para una reserva `pending` sin token, `update().set()` recibe `{ checkinToken: <64 hex> }` y la función devuelve el token de `returning()`.
+  - [x] Si `returning()` viene vacío (otra petición ganó la carrera), relee y devuelve el token existente sin un segundo `update`.
+  - [x] Si `returning()` viene vacío y la relectura no encuentra una reserva `pending`, devuelve `null`.
+  - [x] Un error `23505` en el primer intento provoca un reintento con otro token. Un segundo `23505` se propaga.
+- **Verificación:**
+  ```bash
+  pnpm test src/lib/checkin/__tests__/ensure-token.test.ts
+  ```
+
+## TASK-QR-BE-03 — Generar el token al reservar (D6)
+
+- **Tipo:** Backend (Server Actions)
+- **Archivos:** `src/actions/enrollment.ts` (insert en la línea ~147), `src/actions/guest.ts` (insert en la línea ~242), `src/actions/__tests__/enrollment.test.ts`, `src/actions/__tests__/enrollment-openlab.test.ts`, `src/actions/__tests__/guest.test.ts`
+- **Descripción:** agregar `checkinToken: generateCheckinToken()` a los dos `tx.insert(classEnrollments).values(...)`, dentro de las transacciones existentes. No se cambia ninguna otra lógica.
+- **🔴 Tests:**
+  - [x] `values` recibe `expect.objectContaining({ checkinToken: expect.stringMatching(/^[0-9a-f]{64}$/) })` en una reserva normal, una de Open Lab y una con invitado.
+  - [x] Dos reservas consecutivas generan tokens distintos.
+  - [x] Las aserciones existentes que comparan `values` exacto pasan a `objectContaining`, sin debilitar ninguna otra.
+- **Verificación:**
+  ```bash
+  pnpm test src/actions/__tests__/enrollment.test.ts src/actions/__tests__/enrollment-openlab.test.ts src/actions/__tests__/guest.test.ts
+  ```
+
+## TASK-QR-BE-04 — Servicio `processCheckin` (transacción atómica)
+
+- **Tipo:** Backend (servicio de dominio)
+- **Archivos:** `src/lib/checkin/process-checkin.ts`, `src/lib/checkin/errors.ts` (sin imports de servidor), `src/lib/checkin/__tests__/process-checkin.test.ts`, `src/lib/checkin/__tests__/fakes.ts` (todos nuevos)
+- **Descripción:**
+  - Firma: `processCheckin({ token, actor, now? }): Promise<CheckinResult>`, con `actor: { id: string; role: UserRole } | null`.
+  - Sigue el flujo de SPEC §7.2.1: `db.transaction`, `select … .for('update', { of: classEnrollments })`, las validaciones en orden y un `update` con guardas y `returning`.
+  - `errors.ts` exporta `CheckinErrorCode`, `CHECKIN_HTTP_STATUS` y `CHECKIN_ERROR_MESSAGES`.
+  - `fakes.ts` es un repositorio en memoria con estado mutable para `db.transaction`; lo reutilizan BE-05 y el test de reuso.
+- **🔴 Tests:**
+  - [x] `actor = null` → `UNAUTHENTICATED`, sin tocar la BD.
+  - [x] `actor.role = 'client'` → `FORBIDDEN_ROLE`, y `db.transaction` no se llama.
+  - [x] Token con formato inválido → `TOKEN_NOT_FOUND`, sin tocar la BD.
+  - [x] Token inexistente → `TOKEN_NOT_FOUND`.
+  - [x] Coach que no es titular → `NOT_CLASS_COACH`, y `update` no se llama.
+  - [x] Coach titular con reserva `pending` de hoy → `ok`. `set` recibe `{ status: 'attended', checkinToken: null, checkedInAt: now() }` y el resultado trae `studentName` y `className`.
+  - [x] Admin con la clase de otro coach → `ok`.
+  - [x] Estado `attended`, `absent`, `cancelled` o `late_cancelled` → `ENROLLMENT_NOT_PENDING` con `details.status` (usar `fc.constantFrom`).
+  - [x] Clase `cancelled` → `CLASS_CANCELLED`.
+  - [x] Clase de ayer o de mañana → `OUTSIDE_ATTENDANCE_WINDOW`. En las fronteras: a las 23:59:59.999 CDMX del día de la clase es `ok`; a las 00:00:00.000 del día siguiente es 409.
+  - [x] **Reuso:** con el fake en memoria, la primera llamada da `ok` y la segunda, con el mismo token, `TOKEN_NOT_FOUND`. El estado queda `attended` una sola vez.
+  - [x] **Carrera:** si `update … returning` devuelve 0 filas → `TOKEN_NOT_FOUND`; nunca se reporta un éxito.
+  - [x] Se usa `db.transaction` exactamente una vez por llamada válida.
+- **Verificación:**
+  ```bash
+  pnpm test src/lib/checkin/__tests__/process-checkin.test.ts
+  ```
+
+## TASK-QR-BE-05 — Route Handler `POST /api/check-in`
+
+- **Tipo:** Backend (HTTP)
+- **Archivos:** `src/app/api/check-in/route.ts`, `src/app/api/check-in/__tests__/route.test.ts` (nuevos)
+- **Descripción:** implementa el contrato de SPEC §7.2. Sigue el orden `Origin → sesión → rol → body → processCheckin` y mapea con `CHECKIN_HTTP_STATUS`. Todas las respuestas llevan `Cache-Control: no-store`.
+- **🔴 Tests** (con `getSession` mockeado):
+  - [x] Sin sesión → 401 `UNAUTHENTICATED`.
+  - [x] Sesión `client` → 403 `FORBIDDEN_ROLE`, sin leer el body ni llamar al servicio.
+  - [x] Body que no es JSON, sin `token` o con `token` no string → 400 `INVALID_PAYLOAD`.
+  - [x] `Origin` con un host distinto al de la petición → 403 `INVALID_ORIGIN`.
+  - [x] Cada `code` del servicio se traduce al status HTTP de SPEC §7.2 (`it.each`). `TOKEN_NOT_FOUND` da 404 con el mensaje "Código QR inválido o ya utilizado".
+  - [x] **Reuso** (servicio real con `fakes.ts`): dos POST con el mismo token dan 200 y luego 404.
+  - [x] Coach titular → 200 con `studentName`. Admin → 200.
+  - [x] Si el servicio lanza una excepción → 500 `INTERNAL_ERROR`, sin stack en el body.
+  - [x] Todas las respuestas llevan `Cache-Control: no-store`.
+  - [x] `CHECKIN_HTTP_STATUS` cubre todos los valores de `CheckinErrorCode` (test de exhaustividad).
+- **Verificación:**
+  ```bash
+  pnpm test src/app/api/check-in/__tests__/route.test.ts
+  ```
+
+## TASK-QR-BE-06 — Route Handler `GET /api/check-in/status`
+
+- **Tipo:** Backend (HTTP)
+- **Archivos:** `src/app/api/check-in/status/route.ts`, `src/app/api/check-in/status/__tests__/route.test.ts` (nuevos)
+- **Descripción:** implementa SPEC §7.3. La consulta filtra por `user_suscriptions.user_id = session.sub`.
+- **🔴 Tests:**
+  - [x] Sin sesión → 401.
+  - [x] `enrollmentId` que no es UUID → 400 `INVALID_PAYLOAD`.
+  - [x] Reserva inexistente o de otro usuario → 404 `ENROLLMENT_NOT_FOUND`, con la misma respuesta en ambos casos.
+  - [x] Reserva propia → 200 `{ status, checkedInAt }`.
+  - [x] La respuesta lleva `Cache-Control: no-store`.
+- **Verificación:**
+  ```bash
+  pnpm test src/app/api/check-in/status/__tests__/route.test.ts
+  ```
+
+## TASK-QR-BE-07 — Cierre automático de inasistencias (`pending → absent`)
+
+- **Tipo:** Backend (cron)
+- **Archivos:** `src/lib/queries/attendance-auto-close.ts` (nuevo), `src/app/api/cron/complete-classes/route.ts` (modificado), `src/lib/queries/__tests__/attendance-auto-close.test.ts` (nuevo), `src/app/api/cron/complete-classes/__tests__/route.test.ts` (nuevo)
+- **Descripción:**
+  - Implementa SPEC §9 con funciones puras exportadas: `getAutoCloseCutoff(now)` y `buildAutoCloseWhere(now)`. El SQL se verifica con `new PgDialect().sqlToQuery(...)`.
+  - `markUnattendedEnrollmentsAbsent(now)` ejecuta una sola sentencia `update … returning`.
+  - El cron la llama después de `autoCompletePassedClasses()`.
+- **🔴 Tests:**
+  - [x] `getAutoCloseCutoff(2026-09-23T00:30-06:00)` es `2026-09-23T00:00:00.000-06:00`.
+  - [x] Propiedad con `fast-check`: para todo `now`, `cutoff ≤ now < cutoff + 24 h` y `cutoff` es 00:00 en CDMX.
+  - [x] **Frontera:** una clase de hoy a las 23:10 CDMX queda excluida con `now = 23:59:59.999` CDMX (`class_date ≥ cutoff`) e incluida con `now = 00:00:00.000` del día siguiente.
+  - [x] El SQL generado filtra `status = 'pending'`, `status in ('scheduled','completed')` (nunca `cancelled`), `class_date >= ATTENDANCE_AUTO_CLOSE_FROM` y `class_date < cutoff`, con los parámetros correctos.
+  - [x] `set` recibe `{ status: 'absent', checkinToken: null }` y la función devuelve el número de filas de `returning()`.
+  - [x] Una segunda ejecución sin filas pendientes devuelve `0` (idempotencia).
+  - [x] **Cron:** sin `Bearer ${CRON_SECRET}` → 401 y no ejecuta nada. En éxito → `{ success, completed, markedAbsent, timestamp }`. Un error en cualquiera de los pasos → 500.
+- **Verificación:**
+  ```bash
+  pnpm test src/lib/queries/__tests__/attendance-auto-close.test.ts src/app/api/cron/complete-classes/__tests__/route.test.ts
+  ```
+
+## TASK-QR-BE-08 — Asistencia manual coherente con el QR, más hardening
+
+- **Tipo:** Backend (Server Action existente)
+- **Archivos:** `src/actions/coach.ts` (`updateAttendanceAction`), `src/actions/__tests__/attendance.test.ts`
+- **Descripción:**
+  - `attended` escribe `{ status, checkedInAt: now(), checkinToken: null }`. `absent` escribe `{ status, checkedInAt: null, checkinToken: null }` (I-2, I-3).
+  - Antes de escribir, verifica que cada `enrollmentId` pertenezca a `classId` (en la tabla de titulares o en la de invitados) y que esté en `pending`, `attended` o `absent`. Si alguno no cumple, devuelve error sin escribir nada (SPEC §13.1).
+  - Todas las escrituras se hacen dentro de un `db.transaction`.
+  - Las validaciones existentes (rol, titularidad, ventana CDMX) y sus mensajes no cambian.
+- **🔴 Tests:**
+  - [x] `attended` y `absent` producen los payloads de `set` descritos arriba.
+  - [x] Un `enrollmentId` de otra clase da `{ success: false }` y `update` no se llama.
+  - [x] Una reserva `cancelled` o `late_cancelled` da `{ success: false }` y no se reactiva.
+  - [x] Las escrituras ocurren dentro de `db.transaction`.
+  - [x] Los tests existentes de `attendance.test.ts` y `coach.test.ts` siguen en verde.
+- **Verificación:**
+  ```bash
+  pnpm test src/actions/__tests__/attendance.test.ts src/actions/__tests__/coach.test.ts
+  ```
+
+## TASK-QR-BE-09 — Login con `redirect` seguro
+
+- **Tipo:** Backend y Auth
+- **Archivos:** `src/lib/auth/safe-redirect.ts` (nuevo), `src/lib/auth/__tests__/safe-redirect.test.ts` (nuevo), `src/actions/auth.ts` (`loginAction`), `src/app/(auth)/login/page.tsx`, `src/components/auth/LoginForm.tsx`, `src/actions/__tests__/auth-login.test.ts`
+- **Descripción:** implementa SPEC §7.5.
+  - La página lee `searchParams.redirect` con `await`, porque en Next 16 es una `Promise`.
+  - `LoginForm` recibe el valor y lo envía como input oculto `redirect`.
+  - `loginAction` redirige a `safeRedirectPath(formData.get('redirect')) ?? dashboard`.
+- **🔴 Tests:**
+  - [x] Acepta `/check-in?token=<64 hex>` y `/coach`.
+  - [x] Rechaza `//evil.com`, `https://evil.com`, `/\evil.com`, `javascript:alert(1)`, cadenas con `\r` o `\n`, `''`, `null` y cadenas de más de 512 caracteres.
+  - [x] Propiedad con `fast-check`: para cualquier string, el resultado es `null` o una ruta que empieza con `/` y no con `//` ni con `/\`.
+  - [x] Con un `redirect` válido, `loginAction` llama a `redirect('/check-in?token=…')`. Con uno inválido o ausente redirige al dashboard del rol, como hasta ahora.
+- **Verificación:**
+  ```bash
+  pnpm test src/lib/auth/__tests__/safe-redirect.test.ts src/actions/__tests__/auth-login.test.ts
+  ```
+
+## TASK-QR-FE-01 — Página `/check-in`, respuesta 403 y `CheckInProcessor`
+
+- **Tipo:** Frontend (Server y Client Components)
+- **Archivos:** `src/app/check-in/page.tsx`, `src/components/coach/CheckInProcessor.tsx`, `src/components/coach/CheckInResultCard.tsx`, `src/app/check-in/__tests__/page.test.tsx`, `src/components/coach/__tests__/CheckInProcessor.test.tsx`. Por D1 no se tocó `next.config.ts` ni se creó `forbidden.tsx`.
+- **Descripción:** implementa SPEC §7.1 y §10.2. Antes de codificar, leer `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/forbidden.md`.
+- **🔴 Tests de la página** (`getSession` mockeado; `redirect` de `next/navigation` como `vi.fn` que lanza):
+  - [x] Sin sesión → `redirect('/login?redirect=%2Fcheck-in%3Ftoken%3D<token>')`.
+  - [x] Sesión `client` → muestra la vista "403 · Acceso denegado" y no renderiza `CheckInProcessor`.
+  - [x] Sesión `coach` o `admin` → renderiza `CheckInProcessor` con el token.
+  - [x] Token ausente, mal formado o en arreglo → "Código QR inválido o ya utilizado", sin `CheckInProcessor`.
+- **🔴 Tests del processor** (con `fetch` mockeado):
+  - [x] Hace un solo `POST /api/check-in` con `{ token }`, incluso dentro de `<StrictMode>`.
+  - [x] Respuesta 200 → "¡Asistencia confirmada! Bienvenido(a) Ana".
+  - [x] Respuesta 404 (token reusado o inválido) → "Código QR inválido o ya utilizado".
+  - [x] Respuestas 403 (`FORBIDDEN_ROLE`, `NOT_CLASS_COACH`) y cada 409 → su mensaje de SPEC §7.2.
+  - [x] Respuesta 401 → enlace a `/login?redirect=…`.
+  - [x] Error de red → mensaje y botón "Reintentar".
+  - [x] El resultado se anuncia en una región `aria-live="polite"`.
+- **Verificación:**
+  ```bash
+  pnpm test src/app/check-in/__tests__/page.test.tsx src/components/coach/__tests__/CheckInProcessor.test.tsx
+  ```
+
+## TASK-QR-FE-02 — `CheckinQrButton` y `CheckinQrModal` (cliente)
+
+- **Tipo:** Frontend (Client Components, mobile-first)
+- **Archivos:** `src/components/client/CheckinQrButton.tsx`, `src/components/client/CheckinQrModal.tsx`, `src/components/client/__tests__/CheckinQrButton.test.tsx` (nuevos)
+- **Descripción:** implementa SPEC §10.1, incluido el polling a `/api/check-in/status`. Sigue el patrón visual de `BankTransferModal.tsx`.
+- **🔴 Tests** (`useRouter` y `fetch` mockeados; fake timers):
+  - [x] El botón "Ver mi código QR" es visible. Al hacer clic se abre un `dialog` con nombre accesible y una imagen con `alt` descriptivo.
+  - [x] `Esc` y "Cerrar" cierran el modal y el foco vuelve al botón.
+  - [x] Con el modal abierto consulta `/api/check-in/status?enrollmentId=<id>` cada 3000 ms. Con el modal cerrado no consulta.
+  - [x] Una respuesta `attended` muestra "¡Asistencia confirmada!", cierra el modal y llama a `router.refresh()` una sola vez.
+  - [x] Una respuesta 404 o 401 detiene el polling.
+  - [x] El polling se detiene al desmontar el componente (sin fugas de intervalos) y al cumplirse 15 min.
+- **Verificación:**
+  ```bash
+  pnpm test src/components/client/__tests__/CheckinQrButton.test.tsx
+  ```
+
+## TASK-QR-FE-03 — Integración en el dashboard del cliente
+
+- **Tipo:** Full-stack (query y UI)
+- **Archivos:** `src/lib/queries/next-class.ts` (nuevo), `src/lib/queries/__tests__/next-class.test.ts` (nuevo), `src/app/(portal)/client/page.tsx` (`getNextClass` y líneas 243-267), `src/app/(portal)/client/__tests__/page.test.tsx`
+- **Descripción:** implementa SPEC §10.1. `getNextClass` sale de `page.tsx` y queda como `getNextClassWithCheckin(userId, now)`, que incluye el fallback del token, la generación del QR y el corte de D3. En `page.tsx` la tarjeta solo agrega `<CheckinQrButton />`.
+- **🔴 Tests:**
+  - [x] `getNextClassCutoff(now)` devuelve `now − 50 min` (D3).
+  - [x] Con el token en `NULL` se llama a `ensureCheckinToken(enrollmentId)` y se devuelve el token nuevo junto con `qrDataUrl`.
+  - [x] Si hay token, no se llama a `ensureCheckinToken`.
+  - [x] Si `ensureCheckinToken` o el QR lanzan un error, el resultado llega sin QR y no se propaga el error.
+  - [x] En la página, una próxima clase con token muestra el botón "Ver mi código QR".
+  - [x] Sin próxima clase no hay botón.
+  - [x] Los tests existentes de `page.test.tsx` siguen en verde.
+- **Verificación:**
+  ```bash
+  pnpm test src/lib/queries/__tests__/next-class.test.ts "src/app/(portal)/client/__tests__/page.test.tsx"
+  ```
+
+## TASK-QR-VERIFY-01 — Verificación final
+
+- **Tipo:** QA
+- **Comandos:**
+  ```bash
+  pnpm test && pnpm lint && pnpm exec tsc --noEmit && pnpm build
+  ```
+- **E2E manual.** ⚠️ Usar una BD que **no** sea de producción. Poner `NEXT_PUBLIC_APP_URL=http://192.168.100.68:3000` para que el QR se pueda escanear en la LAN; esa IP ya está en `allowedDevOrigins`.
+  - [ ] El cliente ve "Ver mi código QR" en su próxima clase (probar en 375 px, sin scroll horizontal).
+  - [ ] Un coach sin sesión escanea → pasa por el login → vuelve a `/check-in` → ve "¡Asistencia confirmada! Bienvenido(a) …".
+  - [ ] El modal del cliente se cierra solo en ≤ 3 s y el botón desaparece.
+  - [ ] Escanear de nuevo el mismo QR → "Código QR inválido o ya utilizado".
+  - [ ] El cliente escanea su propio QR → recibe 403.
+  - [ ] Un coach de otra clase → "Esta reserva es de una clase de otro coach."
+  - [ ] Cron local: `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/complete-classes` devuelve `markedAbsent` con el valor esperado.
+
+## TASK-QR-DB-03 — 🔒 Ejecución en producción (la hace el usuario)
+
+- **Tipo:** Operación manual. Claude no la ejecuta.
+- **Pasos** (SPEC §12), **antes del deploy:**
+  - [ ] Fijar `ATTENDANCE_AUTO_CLOSE_FROM` con la fecha real de salida (00:00 CDMX) en el PR.
+  - [ ] Correr los pre-checks de SPEC §8.1 y revisar el conteo B (decisión D4).
+  - [ ] Ejecutar `sql/manual/2026-09-22_001_qr_checkin_columns.sql` y verificar con SPEC §3.3.
+  - [ ] Ejecutar `sql/manual/2026-09-22_002_qr_checkin_backfill.sql` y verificar con SPEC §8.3.
+  - [ ] Hacer merge a `production` y el deploy.
+  - [ ] Al día siguiente, revisar `markedAbsent` en la respuesta del cron.
+- **Verificación:** las consultas de SPEC §3.3 y §8.3 devuelven los resultados esperados.
+
+## Criterios de aceptación globales
+
+- [x] Todos los casos obligatorios de la matriz de trazabilidad están cubiertos y en verde.
+- [x] Ningún archivo ejecuta ni documenta `db:push`, `db:migrate` ni `drizzle-kit push` contra la BD viva.
+- [x] El enum `enrollment_status` no cambia.
+- [x] Rol y titularidad se validan en el backend (página, API y servicio).
+- [x] `page.tsx` solo agrega `<CheckinQrButton />` en la tarjeta de la próxima clase.
+- [x] La UI es mobile-first y accesible (dialog, foco, `aria-live`, alt).
+
+---
+
 # TASK-CLASS-EDIT-RBAC — Edición de Clases Programadas (Cupos y Fecha/Hora)
 
 **Estado:** ✅ Ejecutado
