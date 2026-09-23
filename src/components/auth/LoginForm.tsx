@@ -6,7 +6,12 @@ import { Input } from '@/components/ui/Input';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
 
-export function LoginForm() {
+interface LoginFormProps {
+  /** Internal path to return to after login (validated again on the server). */
+  redirectTo?: string;
+}
+
+export function LoginForm({ redirectTo }: LoginFormProps = {}) {
   const [state, formAction, pending] = useActionState<ActionResult | null, FormData>(
     loginAction,
     null
@@ -17,6 +22,8 @@ export function LoginForm() {
       <h1 className="font-headline text-headline-lg-mobile text-on-surface text-center">
         Iniciar Sesión
       </h1>
+
+      {redirectTo && <input type="hidden" name="redirect" value={redirectTo} />}
 
       {state && !state.success && (
         <p role="alert" className="font-body text-body-md text-error text-center bg-error/10 rounded-DEFAULT px-4 py-3">

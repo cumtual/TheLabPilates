@@ -691,6 +691,8 @@ describe('Property 10: Atomicidad de reserva con invitado (-2 cupos)', () => {
           expect(titularValues.openClassId).toBe(classId);
           expect(titularValues.userSubscriptionId).toBe(userSubId);
           expect(titularValues.status).toBe('pending');
+          // The titular enrollment carries its single-use QR check-in token
+          expect(titularValues.checkinToken).toMatch(/^[0-9a-f]{64}$/);
         }
       ),
       { numRuns: 100 }

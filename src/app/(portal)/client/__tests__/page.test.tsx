@@ -17,11 +17,23 @@ vi.mock('@/lib/auth/session', () => ({
 
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
+vi.mock('@/lib/queries/next-class', () => ({
+  getNextClassWithCheckin: vi.fn(),
+}));
+
+vi.mock('@/lib/queries/pending-transfers', () => ({
+  getPendingTransferPayments: vi.fn().mockResolvedValue([]),
 }));
 
 import ClientDashboardPage from '../page';
 import { db } from '@/db';
 import { getSession } from '@/lib/auth/session';
+import { getNextClassWithCheckin } from '@/lib/queries/next-class';
+
+const mockedNextClass = getNextClassWithCheckin as ReturnType<typeof vi.fn>;
 
 /**
  * Chainable query-builder mock. Awaiting the chain resolves to `result`.
@@ -44,18 +56,16 @@ function makeChain(result: unknown) {
 }
 
 function mockDashboardQuery(userSub: Record<string, unknown>) {
-  // 1st select: subscription state. 2nd select: next class (none).
-  (db.select as ReturnType<typeof vi.fn>)
-    .mockReturnValueOnce(
-      makeChain([
-        {
-          userSub,
-          payment: { confirmed: true },
-          subscription: { guest: false },
-        },
-      ])
-    )
-    .mockReturnValueOnce(makeChain([]));
+  // Subscription state query (the next class comes from getNextClassWithCheckin).
+  (db.select as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+    makeChain([
+      {
+        userSub,
+        payment: { confirmed: true },
+        subscription: { guest: false },
+      },
+    ])
+  );
 }
 
 describe('ClientDashboardPage — expired vs suspended', () => {
@@ -66,6 +76,7 @@ describe('ClientDashboardPage — expired vs suspended', () => {
       role: 'client',
       email: 'client@test.com',
     });
+    mockedNextClass.mockResolvedValue(null);
   });
 
   it('shows the expired state (never suspended) for an expired subscription', async () => {
@@ -96,5 +107,65 @@ describe('ClientDashboardPage — expired vs suspended', () => {
 
     expect(screen.getByText('Suscripción Suspendida')).toBeInTheDocument();
     expect(screen.queryByText('Expirada')).toBeNull();
+  });
+});
+
+describe('ClientDashboardPage — QR check-in on the next class', () => {
+  const activeSub = {
+    id: 'sub-3',
+    active: true,
+    status: 'active',
+    daysRemaining: 5,
+    expirationDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sub: 'user-uuid',
+      role: 'client',
+      email: 'client@test.com',
+    });
+  });
+
+  function nextClass(checkin: { qrDataUrl: string } | null) {
+    return {
+      enrollmentId: 'enrollment-1',
+      classDate: new Date(Date.now() + 60 * 60 * 1000),
+      classType: 'mat_pilates',
+      customName: null,
+      coachName: 'Coach Ana',
+      checkin,
+    };
+  }
+
+  it('shows "Ver mi código QR" when the pending next class has a QR', async () => {
+    mockDashboardQuery(activeSub);
+    mockedNextClass.mockResolvedValue(nextClass({ qrDataUrl: 'data:image/svg+xml,%3Csvg%3E' }));
+
+    render(await ClientDashboardPage());
+
+    expect(screen.getByText('Tu próxima clase')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver mi código QR' })).toBeInTheDocument();
+  });
+
+  it('shows the next class without the QR button when no QR is available', async () => {
+    mockDashboardQuery(activeSub);
+    mockedNextClass.mockResolvedValue(nextClass(null));
+
+    render(await ClientDashboardPage());
+
+    expect(screen.getByText('Tu próxima clase')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver mi código QR' })).toBeNull();
+  });
+
+  it('shows no QR button without a next class', async () => {
+    mockDashboardQuery(activeSub);
+    mockedNextClass.mockResolvedValue(null);
+
+    render(await ClientDashboardPage());
+
+    expect(screen.queryByText('Tu próxima clase')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ver mi código QR' })).toBeNull();
   });
 });

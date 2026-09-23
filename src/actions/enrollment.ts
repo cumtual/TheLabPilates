@@ -7,6 +7,7 @@ import { classEnrollments, openClasses, userSubscriptions, payments, subscriptio
 import { getSession } from '@/lib/auth/session';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import { isWithinGracePeriod } from '@/lib/utils/date';
+import { generateCheckinToken } from '@/lib/checkin/token';
 import type { ActionResult } from '@/lib/types';
 
 export async function enrollInClassAction(classId: string): Promise<ActionResult> {
@@ -148,6 +149,7 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       openClassId: classId,
       userSubscriptionId: userSub.id,
       status: 'pending',
+      checkinToken: generateCheckinToken(),
     });
 
     // Open Lab memberships don't use days_remaining — unlimited classes

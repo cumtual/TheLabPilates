@@ -16,6 +16,7 @@ import * as fc from 'fast-check';
 // Track SQL execute calls to detect days_remaining modifications
 let executeCalls: unknown[] = [];
 let transactionExecuteCalls: unknown[] = [];
+let transactionInsertValues: Array<Record<string, unknown>> = [];
 
 vi.mock('@/db', () => ({
   db: {
@@ -95,6 +96,7 @@ const capacityArb = fc.integer({ min: 1, max: 20 });
 function resetTracking() {
   executeCalls = [];
   transactionExecuteCalls = [];
+  transactionInsertValues = [];
 }
 
 /**
@@ -105,7 +107,10 @@ function createMockTransaction() {
   return async (cb: (tx: unknown) => Promise<void>) => {
     const mockTx = {
       insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockResolvedValue(undefined),
+        values: vi.fn((values: Record<string, unknown>) => {
+          transactionInsertValues.push(values);
+          return Promise.resolve(undefined);
+        }),
       }),
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
@@ -264,6 +269,9 @@ describe('Property 18: Invariante de days_remaining para Open Lab', () => {
             // CRITICAL ASSERTION: days_remaining must NOT be modified
             // The transaction's execute() should NOT be called for Open Lab
             expect(wasDaysRemainingModified()).toBe(false);
+
+            // Open Lab bookings also get their single-use QR check-in token
+            expect(transactionInsertValues.at(-1)?.checkinToken).toMatch(/^[0-9a-f]{64}$/);
           }
         ),
         { numRuns: 100 }
