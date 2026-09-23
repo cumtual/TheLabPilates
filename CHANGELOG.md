@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.0](https://github.com/cumtual/TheLabPilates/compare/v1.14.0...v1.15.0) (2026-09-23)
+
+
+### Features
+
+* implement decrement of subscription credits and transition to e… ([17f36d1](https://github.com/cumtual/TheLabPilates/commit/17f36d1d4f71743b05d6a7ded09ff434fea88bd8))
+* implement decrement of subscription credits and transition to expired status ([dd7ccaf](https://github.com/cumtual/TheLabPilates/commit/dd7ccafa59b421f56aecfabc9e969a41c9f2927e))
+* QR code class check-in with automatic absence closing ([a213529](https://github.com/cumtual/TheLabPilates/commit/a21352961f0a2ce52eb0f912344ab50eda633101))
+* QR code class check-in with automatic absence closing ([0374c5b](https://github.com/cumtual/TheLabPilates/commit/0374c5b64ade14b49265b899fe97466f3835e37b))
+
 ## [1.14.0](https://github.com/cumtual/TheLabPilates/compare/v1.13.0...v1.14.0) (2026-09-16)
 
 
