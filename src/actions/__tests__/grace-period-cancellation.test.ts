@@ -37,6 +37,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
   notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
+  inArray: vi.fn((...args: unknown[]) => ({ type: 'inArray', args })),
 }));
 
 vi.mock('@/lib/guest/eligibility', () => ({
@@ -106,15 +107,21 @@ function setupEnrollmentSelectMock(options: {
 
 function mockTransaction() {
   (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-    async (cb: (tx: unknown) => Promise<void>) => {
+    async (cb: (tx: unknown) => Promise<unknown>) => {
       const mockTx = {
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
         execute: vi.fn().mockResolvedValue(undefined),
         update: vi.fn().mockReturnValue({
-          set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue(
+              Object.assign(Promise.resolve(undefined), {
+                returning: vi.fn().mockResolvedValue([{ id: 'enrollment-1' }]),
+              })
+            ),
+          }),
         }),
       };
-      await cb(mockTx);
+      return cb(mockTx);
     }
   );
 }
@@ -235,7 +242,7 @@ describe('Grace period: titular enrollment', () => {
 
     expect(result.success).toBe(true);
     expect(db.transaction).toHaveBeenCalledTimes(1);
-    // No late_cancelled status write — the enrollment is deleted with a refund
+    // No late_cancelled status write — the enrollment is soft-cancelled with a refund
     expect(db.update).not.toHaveBeenCalled();
   });
 });

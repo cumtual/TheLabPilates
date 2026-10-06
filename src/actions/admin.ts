@@ -20,6 +20,7 @@ import { ALL_ROLES } from '@/lib/types/roles';
 import type { UserRole } from '@/lib/types/roles';
 import { parseDateTimeLocalAsMexicoCity, formatShortDateTime } from '@/lib/utils/date';
 import { getClassDisplayName } from '@/lib/utils/class-type';
+import { buildEnrollmentCancellationPatch, buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
 
 export async function cancelClassAction(classId: string): Promise<ActionResult> {
   const session = await getSession();
@@ -90,7 +91,7 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
 
       await tx
         .update(classEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildEnrollmentCancellationPatch('cancelled'))
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
     }
 
@@ -99,7 +100,7 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
     for (const guest of pendingGuestEnrollments) {
       await tx
         .update(guestEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildGuestCancellationPatch('cancelled'))
         .where(eq(guestEnrollments.id, guest.guestEnrollmentId));
 
       await tx
@@ -324,7 +325,7 @@ export async function suspendSubscriptionAction(
     for (const enrollment of futureEnrollments) {
       await tx
         .update(classEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildEnrollmentCancellationPatch('cancelled'))
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
 
       // Open Lab has no per-session credits to restore.

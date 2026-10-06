@@ -230,6 +230,9 @@ export const classEnrollments = pgTable(
       'class_enrolleds_checkin_token_unique'
     ),
     checkedInAt: timestamp('checked_in_at', { withTimezone: true }),
+    // Cancellation audit (admin only) — sql/manual/2026-09-24_001_enrollment_cancelled_at.sql
+    // Set to now() on every transition to cancelled/late_cancelled; NULL otherwise.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
   (table) => ({
     uniqueEnrollment: uniqueIndex('uk_class_user_enrollment').on(
@@ -264,6 +267,8 @@ export const guestEnrollments = pgTable('guest_enrollments', {
     .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
   status: enrollmentStatusEnum('status').default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  // Cancellation audit (admin only) — sql/manual/2026-09-24_001_enrollment_cancelled_at.sql
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
 });
 
 export const guestCredits = pgTable('guest_credits', {

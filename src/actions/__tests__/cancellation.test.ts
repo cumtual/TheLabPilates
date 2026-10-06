@@ -38,6 +38,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
   notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
+  inArray: vi.fn((...args: unknown[]) => ({ type: 'inArray', args })),
 }));
 
 import { cancelReservationAction, confirmLateCancellationAction } from '../enrollment';
@@ -176,19 +177,24 @@ describe('Property 18: Timely Cancellation Refunds Credit', () => {
           });
 
           // Track transaction callback execution
-          let txDeleteCalled = false;
+          let txSoftCancelCalled = false;
           let txExecuteCalled = false;
 
-          (db.transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (cb: (tx: unknown) => Promise<void>) => {
+          (db.transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (cb: (tx: unknown) => Promise<unknown>) => {
             const mockTx = {
-              delete: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue(undefined),
+              update: vi.fn().mockReturnValue({
+                set: vi.fn().mockReturnValue({
+                  where: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockResolvedValue([{ id: enrollmentId }]),
+                  }),
+                }),
               }),
               execute: vi.fn().mockResolvedValue(undefined),
             };
-            await cb(mockTx);
-            txDeleteCalled = mockTx.delete.mock.calls.length > 0;
+            const out = await cb(mockTx);
+            txSoftCancelCalled = mockTx.update.mock.calls.length > 0;
             txExecuteCalled = mockTx.execute.mock.calls.length > 0;
+            return out;
           });
 
           const result = await cancelReservationAction(enrollmentId);
@@ -202,8 +208,8 @@ describe('Property 18: Timely Cancellation Refunds Credit', () => {
           // Transaction must have been called
           expect(db.transaction).toHaveBeenCalledTimes(1);
 
-          // Both delete (enrollment) and execute (increment days_remaining) must have been called
-          expect(txDeleteCalled).toBe(true);
+          // Both soft-cancel update (enrollment) and execute (increment days_remaining) must have been called
+          expect(txSoftCancelCalled).toBe(true);
           expect(txExecuteCalled).toBe(true);
         }
       ),
@@ -267,7 +273,9 @@ describe('Property 19: Late Cancellation No Refund', () => {
           });
 
           // Mock db.update for setting status to late_cancelled
-          const mockWhere = vi.fn().mockResolvedValue(undefined);
+          const mockWhere = vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: enrollmentId }]),
+          });
           const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
           (db.update as ReturnType<typeof vi.fn>).mockReturnValueOnce({ set: mockSet });
 
@@ -280,7 +288,7 @@ describe('Property 19: Late Cancellation No Refund', () => {
           expect(db.update).toHaveBeenCalledTimes(1);
 
           // Verify set was called with status 'late_cancelled'
-          expect(mockSet).toHaveBeenCalledWith({ status: 'late_cancelled' });
+          expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ status: 'late_cancelled' }));
 
           // Transaction should NOT be called (no atomic delete+increment)
           expect(db.transaction).not.toHaveBeenCalled();

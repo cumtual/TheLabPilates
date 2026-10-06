@@ -18,6 +18,7 @@ import { isWithinGracePeriod } from '@/lib/utils/date';
 import { generateCheckinToken } from '@/lib/checkin/token';
 import type { GuestEligibilityResult } from '@/lib/types/guest';
 import type { ActionResult } from '@/lib/types';
+import { buildEnrollmentCancellationPatch, buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
 
 /**
  * Server action to check if the current authenticated user is eligible
@@ -623,13 +624,13 @@ export async function cancelGuestAction(
         // Fallback: cancel without credit restoration if membership not found
         await db
           .update(guestEnrollments)
-          .set({ status: 'cancelled' })
+          .set(buildGuestCancellationPatch('cancelled'))
           .where(eq(guestEnrollments.id, guestEnrollmentId));
       } else {
         await db.transaction(async (tx) => {
           await tx
             .update(guestEnrollments)
-            .set({ status: 'cancelled' })
+            .set(buildGuestCancellationPatch('cancelled'))
             .where(eq(guestEnrollments.id, guestEnrollmentId));
         });
 
@@ -704,7 +705,7 @@ export async function confirmLateCancelGuestAction(
     try {
       await db
         .update(guestEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildGuestCancellationPatch('cancelled'))
         .where(eq(guestEnrollments.id, guestEnrollmentId));
 
       const eligibility = await isUserOpenLabEligible(session.sub);
@@ -728,7 +729,7 @@ export async function confirmLateCancelGuestAction(
   try {
     await db
       .update(guestEnrollments)
-      .set({ status: 'cancelled' })
+      .set(buildGuestCancellationPatch('cancelled'))
       .where(eq(guestEnrollments.id, guestEnrollmentId));
   } catch {
     return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
@@ -833,13 +834,13 @@ export async function cancelReservationWithGuestAction(
         // Cancel the titular enrollment
         await tx
           .update(classEnrollments)
-          .set({ status: 'cancelled' })
+          .set(buildEnrollmentCancellationPatch('cancelled'))
           .where(eq(classEnrollments.id, enrollmentId));
 
         // Cancel the guest enrollment
         await tx
           .update(guestEnrollments)
-          .set({ status: 'cancelled' })
+          .set(buildGuestCancellationPatch('cancelled'))
           .where(eq(guestEnrollments.id, activeGuest.id));
       });
 
@@ -941,12 +942,12 @@ export async function confirmLateCancelBothAction(
       await db.transaction(async (tx) => {
         await tx
           .update(classEnrollments)
-          .set({ status: 'cancelled' })
+          .set(buildEnrollmentCancellationPatch('cancelled'))
           .where(eq(classEnrollments.id, enrollmentId));
 
         await tx
           .update(guestEnrollments)
-          .set({ status: 'cancelled' })
+          .set(buildGuestCancellationPatch('cancelled'))
           .where(eq(guestEnrollments.id, activeGuest.id));
       });
 
@@ -971,13 +972,13 @@ export async function confirmLateCancelBothAction(
       // Mark titular as 'late_cancelled'
       await tx
         .update(classEnrollments)
-        .set({ status: 'late_cancelled' })
+        .set(buildEnrollmentCancellationPatch('late_cancelled'))
         .where(eq(classEnrollments.id, enrollmentId));
 
       // Mark guest as 'cancelled'
       await tx
         .update(guestEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildGuestCancellationPatch('cancelled'))
         .where(eq(guestEnrollments.id, activeGuest.id));
     });
   } catch {

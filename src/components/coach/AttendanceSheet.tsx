@@ -12,6 +12,8 @@ interface EnrollmentRow {
   studentName: string;
   studentEmail: string;
   userId: string;
+  /** Fecha de reserva ya formateada; solo la página de admin la envía (auditoría). */
+  bookedAtLabel?: string;
 }
 
 interface GuestEnrollmentRow {
@@ -168,6 +170,11 @@ export function AttendanceSheet({
                 <p className="font-body text-xs text-on-surface-variant truncate">
                   {entry.data.studentEmail}
                 </p>
+                {entry.data.bookedAtLabel && (
+                  <p className="font-body text-xs text-outline truncate">
+                    Reservó: {entry.data.bookedAtLabel}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
