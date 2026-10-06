@@ -68,6 +68,7 @@ vi.mock('drizzle-orm', () => ({
     { raw: vi.fn() }
   ),
   notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
+  inArray: vi.fn((...args: unknown[]) => ({ type: 'inArray', args })),
   count: vi.fn(() => 'count_fn'),
 }));
 
@@ -104,7 +105,7 @@ function resetTracking() {
  * to modify days_remaining via raw SQL).
  */
 function createMockTransaction() {
-  return async (cb: (tx: unknown) => Promise<void>) => {
+  return async (cb: (tx: unknown) => Promise<unknown>) => {
     const mockTx = {
       insert: vi.fn().mockReturnValue({
         values: vi.fn((values: Record<string, unknown>) => {
@@ -120,9 +121,15 @@ function createMockTransaction() {
         return Promise.resolve(undefined);
       }),
       update: vi.fn().mockReturnValue({
-        set: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
-        }),
+        set: vi.fn((patch: Record<string, unknown>) => ({
+          where: vi.fn().mockReturnValue({
+            // Enrollment reactivation (status → pending) finds no cancelled row;
+            // a cancellation soft-cancels exactly one row.
+            returning: vi
+              .fn()
+              .mockResolvedValue(patch.status === 'pending' ? [] : [{ id: 'enrollment-id' }]),
+          }),
+        })),
       }),
       // Duplicate re-check inside the transaction: tx.select().from().innerJoin().where()
       select: vi.fn().mockReturnValue({
@@ -134,8 +141,7 @@ function createMockTransaction() {
       }),
       rollback: vi.fn(),
     };
-    await cb(mockTx);
-    return undefined;
+    return cb(mockTx);
   };
 }
 

@@ -82,6 +82,11 @@ Tests live next to code in `__tests__/` folders.
 ## 4. Core Invariants (Business Rules)
 - **Class duration:** every class lasts exactly **50 minutes**.
 - **Cancellations & refunds:** a credit is refunded only when cancelling **≥24 h before** the class, or within a **10-minute grace window after booking**. Otherwise the enrollment becomes `late_cancelled` (no refund).
+- **Cancellation audit (`SPEC-CANCELLATION-AUDIT-AND-TERMS.md`):**
+  - Cancelling never deletes the row. Every transition to `cancelled` or `late_cancelled` uses `buildEnrollmentCancellationPatch` or `buildGuestCancellationPatch` from `src/lib/enrollment/cancellation.ts`, which set `cancelled_at = now()`. The update is guarded with `status = 'pending'` so a credit is never refunded twice.
+  - When a user books a class again after cancelling, the cancelled row is reactivated (`created_at = now()`) instead of inserted, because of `uk_class_user_enrollment`.
+  - `created_at` and `cancelled_at` are **admin-only**. Read them only through `src/lib/queries/admin-enrollment-audit.ts`, which checks the role, and never add them to the shared coach queries in `lib/queries/coach.ts`.
+  - The text in `/terminos-y-condiciones` §5 must match these rules exactly.
 - **Subscription lifecycle:**
   - **Open Lab:** valid 30 days (`days_remaining`), no credit tracking, **1 guest credit per month**.
   - **Credit packages (Progress, Practice, Entry, Pass):** credits valid for 1 month; when credits reach 0 **or** the month ends → `expired` (**NEVER** `suspended`).

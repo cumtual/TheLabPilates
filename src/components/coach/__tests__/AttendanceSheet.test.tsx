@@ -79,3 +79,22 @@ describe('AttendanceSheet — clase finalizada', () => {
     expect(screen.getByRole('button', { name: /finalizar clase/i })).toBeInTheDocument();
   });
 });
+
+describe('AttendanceSheet — fecha de reserva (solo admin)', () => {
+  it('muestra «Reservó» cuando la página admin pasa bookedAtLabel', () => {
+    render(
+      <AttendanceSheet
+        classId="class-1"
+        enrollments={[{ ...enrollments[0], bookedAtLabel: '24/09/2026, 09:00 AM' }]}
+        isCompleted={false}
+      />
+    );
+    expect(screen.getByText('Reservó: 24/09/2026, 09:00 AM')).toBeInTheDocument();
+  });
+
+  it('sin bookedAtLabel (vista del coach) no muestra fechas de auditoría', () => {
+    render(<AttendanceSheet classId="class-1" enrollments={enrollments} isCompleted={false} />);
+    expect(screen.queryByText(/Reservó/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Canceló/)).not.toBeInTheDocument();
+  });
+});

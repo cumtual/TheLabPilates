@@ -9,6 +9,7 @@ import {
   confirmLateCancelGuestAction,
   confirmLateCancelBothAction,
 } from '@/actions/guest';
+import { CancellationPolicyLink } from '@/components/client/CancellationPolicyLink';
 
 export interface CancelGuestDialogProps {
   /** Whether the dialog is open */
@@ -160,6 +161,7 @@ export function CancelGuestDialog({
           <p className="font-semibold text-error">
             El crédito de invitado NO será reembolsado. ¿Deseas continuar?
           </p>
+          <CancellationPolicyLink />
           {error && (
             <p className="text-xs text-error">{error}</p>
           )}
@@ -189,6 +191,7 @@ export function CancelGuestDialog({
           <p className="font-semibold text-error">
             El crédito de invitado NO será reembolsado. ¿Deseas continuar?
           </p>
+          <CancellationPolicyLink />
           {error && (
             <p className="text-xs text-error">{error}</p>
           )}

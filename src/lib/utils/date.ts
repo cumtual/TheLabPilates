@@ -274,3 +274,33 @@ export function isAttendanceWindowOpen(
   const { start, end } = getMexicoCityDayBounds(d);
   return now >= start && now <= end;
 }
+
+/** Texto para timestamps de auditoría ausentes (p. ej. cancelaciones previas al registro). */
+export const AUDIT_DATE_FALLBACK = 'Sin registro';
+
+const auditDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: TIMEZONE,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+});
+
+/**
+ * Timestamp de auditoría (solo admin): `DD/MM/YYYY, hh:mm A` en America/Mexico_City.
+ * Ejemplo: "24/09/2026, 07:05 PM". Se arma con `formatToParts` para no depender
+ * del orden ni del meridiano del locale ("p.m." en es-MX).
+ */
+export function formatAuditDateTime(date: Date | string | null | undefined): string {
+  if (!date) return AUDIT_DATE_FALLBACK;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return AUDIT_DATE_FALLBACK;
+
+  const parts = Object.fromEntries(
+    auditDateTimeFormatter.formatToParts(d).map((p) => [p.type, p.value])
+  ) as Record<Intl.DateTimeFormatPartTypes, string>;
+
+  return `${parts.day}/${parts.month}/${parts.year}, ${parts.hour}:${parts.minute} ${parts.dayPeriod.toUpperCase()}`;
+}

@@ -49,6 +49,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
   notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
+  inArray: vi.fn((...args: unknown[]) => ({ type: 'inArray', args })),
 }));
 
 import { enrollInClassAction } from '../enrollment';
@@ -484,6 +485,12 @@ describe('Property 17: Atomic Enrollment Transaction', () => {
                 }),
               }),
               execute: vi.fn().mockResolvedValue(undefined),
+              // No cancelled row to reactivate → falls through to INSERT
+              update: vi.fn().mockReturnValue({
+                set: vi.fn().mockReturnValue({
+                  where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }),
+                }),
+              }),
               // Duplicate re-check inside the transaction: tx.select().from().innerJoin().where()
               select: vi.fn().mockReturnValue({
                 from: vi.fn().mockReturnValue({

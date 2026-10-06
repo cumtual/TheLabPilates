@@ -9,6 +9,8 @@ import {
   pgEnum,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+// Relative import: drizzle-kit and the seed script run without the @/ alias.
+import { CLASS_TYPES } from '../lib/utils/class-type';
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['client', 'coach', 'admin']);
@@ -22,12 +24,9 @@ export const classAvailabilityEnum = pgEnum('class_availability', [
   'not_available',
   'full',
 ]);
-export const classTypeEnum = pgEnum('class_type', [
-  'yoga',
-  'mat_pilates',
-  'barre',
-  'personalizada',
-]);
+// Valores en src/lib/utils/class-type.ts (CLASS_TYPES); 'sculpt' llega con
+// sql/manual/2026-10-06_001_class_type_sculpt.sql.
+export const classTypeEnum = pgEnum('class_type', CLASS_TYPES);
 export const classStatusEnum = pgEnum('class_status', [
   'scheduled',
   'cancelled',
@@ -230,6 +229,9 @@ export const classEnrollments = pgTable(
       'class_enrolleds_checkin_token_unique'
     ),
     checkedInAt: timestamp('checked_in_at', { withTimezone: true }),
+    // Cancellation audit (admin only) — sql/manual/2026-09-24_001_enrollment_cancelled_at.sql
+    // Set to now() on every transition to cancelled/late_cancelled; NULL otherwise.
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
   (table) => ({
     uniqueEnrollment: uniqueIndex('uk_class_user_enrollment').on(
@@ -264,6 +266,8 @@ export const guestEnrollments = pgTable('guest_enrollments', {
     .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
   status: enrollmentStatusEnum('status').default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  // Cancellation audit (admin only) — sql/manual/2026-09-24_001_enrollment_cancelled_at.sql
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
 });
 
 export const guestCredits = pgTable('guest_credits', {

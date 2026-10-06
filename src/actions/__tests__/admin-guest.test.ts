@@ -129,6 +129,7 @@ describe('adminRemoveGuestAction', () => {
       registeredById: 'user-1',
       status: 'pending',
       createdAt: new Date(),
+      cancelledAt: null,
     });
 
     const result = await adminRemoveGuestAction('guest-1');
@@ -157,6 +158,7 @@ describe('adminRemoveGuestAction', () => {
       registeredById: 'admin-1',
       status: 'cancelled',
       createdAt: new Date(),
+      cancelledAt: null,
     });
 
     const result = await adminRemoveGuestAction('guest-1');
@@ -183,6 +185,7 @@ describe('adminRemoveGuestAction', () => {
       registeredById: 'admin-1',
       status: 'pending',
       createdAt: new Date(),
+      cancelledAt: null,
     });
 
     // Mock transaction to simulate successful execution
@@ -223,6 +226,7 @@ describe('adminRemoveGuestAction', () => {
       registeredById: 'admin-1',
       status: 'pending',
       createdAt: new Date(),
+      cancelledAt: null,
     });
 
     // Mock transaction to throw an error
@@ -269,6 +273,7 @@ const guestEnrollmentArb = fc.record({
   registeredById: uuidArb,
   status: activeStatusArb,
   createdAt: fc.date(),
+  cancelledAt: fc.constant(null),
 });
 
 // ─── Property-Based Tests ──────────────────────────────────────────────────────
@@ -380,6 +385,7 @@ describe('Property 14: Admin solo puede eliminar invitados de origen admin', () 
             registeredById,
             status,
             createdAt,
+            cancelledAt: null,
           });
 
           const result = await adminRemoveGuestAction(enrollmentId);

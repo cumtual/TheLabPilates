@@ -1,3 +1,148 @@
+# TASK-CA — Auditoría de cancelaciones + Términos (regla de 10 min)
+
+**Estado:** ✅ Ejecutado (2026-09-24). Suite: 732/732 tests (94 archivos), `tsc` limpio, `pnpm build` OK y `pnpm lint` sin problemas nuevos (los 7 que aparecen en `admin-guest.test.ts` y `guest.ts` ya existían en `HEAD`). **Pendiente (usuario):** TASK-CA-DB-02 y el E2E manual de TASK-CA-VERIFY-01.
+**Decisiones confirmadas:**
+- **D1-A:** reactivar la fila cancelada.
+- **D2:** también se audita `guest_enrollments`.
+- **D3:** se usa la página existente `/terminos-y-condiciones`.
+- **D4:** «Reservó» en inscritos activos.
+- **D5:** las fechas también se muestran en `/admin/users/[userId]`.
+**Especificación:** `SPEC-CANCELLATION-AUDIT-AND-TERMS.md`
+**Runner:** Vitest. `pnpm test <ruta>` equivale a `vitest run <ruta>`. Se aplican las mismas reglas Red→Green→Refactor de la sección TASK-QR (abajo).
+**Restricción de BD:** ninguna tarea ejecuta comandos contra la BD. `TASK-CA-DB-02` la ejecuta el usuario.
+
+## Matriz de trazabilidad (casos obligatorios)
+
+| Caso obligatorio | Tareas | Archivos de test |
+|---|---|---|
+| Al cancelar se guarda `cancelled_at = now()` | BE-01, BE-02, BE-04, BE-05 | `lib/enrollment/__tests__/cancellation.test.ts`, `enrollment-cancellation.test.ts`, `src/__tests__/cancellation-audit-writers.test.ts` (guarda estructural sobre `guest.ts`, `admin.ts` y `admin-guest.ts`) |
+| Un no-admin no recibe `cancelled_at` ni accede al reporte | SEC-01, FE-02 | `admin-enrollment-audit.test.ts`, `coach-queries-shape.test.ts`, `audit-import-boundary.test.ts`, `admin/attendance/[classId]/__tests__/page.test.tsx` |
+| Ventana de gracia (≤10 min reembolsa; >10 min y <24 h retiene) | BE-02, BE-03 | `enrollment-cancellation.test.ts` (límite exacto de 10:00.000 / 10:00.001 y propiedad fast-check), `grace-period-cancellation.test.ts`, `enrollment-reactivation.test.ts` |
+
+## Tareas
+
+### TASK-CA-DB-01 · DB · Script aditivo y columna en Drizzle
+- **Archivos:** `sql/manual/2026-09-24_001_enrollment_cancelled_at.sql`, `src/db/schema.ts`, `src/db/__tests__/cancelled-at-migration.test.ts`, `src/db/__tests__/schema-cancelled-at.test.ts`
+- **Descripción:** script de SPEC §2.1 y `cancelledAt` (nullable, sin default) en `classEnrollments` y, con D2, también en `guestEnrollments`.
+- **Tests 🔴:**
+  - El SQL contiene `ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE`, `BEGIN`/`COMMIT` y `lock_timeout`.
+  - El SQL **no** contiene `DROP`, `TRUNCATE`, `DELETE`, `UPDATE` ni `DEFAULT`, sin distinguir mayúsculas.
+  - `getTableColumns(classEnrollments).cancelledAt` existe: nombre `cancelled_at`, `notNull=false`, `hasDefault=false`, `withTimezone=true`.
+- **Verificar:** `pnpm test src/db/__tests__/cancelled-at-migration.test.ts src/db/__tests__/schema-cancelled-at.test.ts`
+
+### TASK-CA-DB-02 · DB · Ejecución en producción (USUARIO)
+- Correr el script en el SQL editor de Supabase **antes** del deploy y después la query de verificación de SPEC §2.1. Correrlo dos veces es seguro porque es idempotente.
+
+### TASK-CA-BE-01 · Backend · Helper `buildCancellationPatch`
+- **Archivos:** `src/lib/enrollment/cancellation.ts`, `src/lib/enrollment/__tests__/cancellation.test.ts`
+- **Tests 🔴:**
+  - `buildCancellationPatch('cancelled')` y `('late_cancelled')` devuelven el `status` correcto.
+  - `cancelledAt` se serializa como `now()`. Se verifica con `new PgDialect().sqlToQuery(...)`, el mismo patrón que en QR.
+  - Solo acepta los estados cancelados; se verifica en tipos con `// @ts-expect-error` sobre `'attended'`.
+- **Verificar:** `pnpm test src/lib/enrollment/__tests__/cancellation.test.ts`
+
+### TASK-CA-BE-02 · Backend · Cancelación del cliente: DELETE → UPDATE, `cancelled_at` y anti doble reembolso
+- **Archivos:** `src/actions/enrollment.ts` (`refundEnrollment`, `confirmLateCancellationAction`), `src/actions/__tests__/enrollment-cancellation.test.ts` (nuevo), `grace-period-cancellation.test.ts`, `cancellation.test.ts`, `late-cancellation-*.test.ts` y `enrollment-openlab.test.ts` (sus mocks pasan de `delete` a `update().set().where().returning()`).
+- **Tests 🔴:**
+  1. **cancelled_at:** una cancelación a tiempo (clase en 48 h) llama `update(classEnrollments).set(...)` con `status:'cancelled'` y `cancelledAt` = SQL `now()`, y **nunca** llama `delete`.
+  2. **cancelled_at, caso tardío:** `confirmLateCancellationAction` (clase en 2 h, reserva de hace 30 min) hace `set` con `status:'late_cancelled'` y `cancelledAt` = `now()`.
+  3. **Guardia:** el WHERE del UPDATE incluye `status = 'pending'` (verificado con `sqlToQuery`).
+  4. **Doble reembolso:** si `returning()` devuelve `[]` (otro request ya canceló), **no** se ejecuta `days_remaining + 1` y se responde con error controlado.
+  5. **Gracia, límite inclusivo:** reserva de hace exactamente 10:00.000 min y clase en 2 h → reembolso y `cancelled`.
+  6. **Gracia, fuera de ventana:** reserva de hace 10:00.001 min y clase en 2 h → `LATE_CANCELLATION` sin reembolso. Al confirmar queda `late_cancelled` sin `days_remaining + 1`.
+  7. **Regla de 24 h:** reserva de hace 3 días y clase en 24 h exactas → reembolso.
+  8. **Re-evaluación:** se abre el diálogo dentro de la gracia y se confirma después. Si al confirmar sigue dentro de la gracia, se reembolsa.
+  9. **Open Lab:** se cancela con `cancelled_at` pero sin tocar `days_remaining`.
+  10. **Propiedad:** en `enrollment-cancellation.test.ts`, con fast-check sobre Δ ∈ [0, 20 min] y la clase a 5 h: se reembolsa ⇔ Δ ≤ 10 min.
+- Todos usan `vi.useFakeTimers()` y `vi.setSystemTime(new Date('2026-09-24T10:00:00.000-06:00'))`.
+- **Verificar:** `pnpm test src/actions/__tests__/enrollment-cancellation.test.ts src/actions/__tests__/grace-period-cancellation.test.ts src/actions/__tests__/cancellation.test.ts src/__tests__/late-cancellation-bug-condition.test.ts src/__tests__/late-cancellation-preservation.test.ts src/actions/__tests__/enrollment-openlab.test.ts`
+
+### TASK-CA-BE-03 · Backend · Re-reserva tras cancelar (D1-A)
+- **Archivos:** `src/actions/enrollment.ts` (`enrollInClassAction`), `src/actions/__tests__/enrollment-reactivation.test.ts` (nuevo, con drizzle real), y los mocks de `enrollment.test.ts` y `enrollment-openlab.test.ts`
+- **Tests 🔴:**
+  - Si existe una fila `cancelled`/`late_cancelled` para `(clase, suscripción)`, se hace **UPDATE** a `pending` con `created_at = now()`, `cancelled_at = null` y un `checkin_token` nuevo. No hay INSERT y se descuenta 1 crédito.
+  - Sin fila previa, se mantiene el INSERT actual.
+  - Una fila previa `pending`/`attended` sigue respondiendo «Ya estás inscrito» (sin cambios).
+  - Tras reactivar, la gracia corre desde el nuevo `created_at`: cancelar 5 min después reembolsa.
+- **Verificar:** `pnpm test src/actions/__tests__/enrollment-reactivation.test.ts src/actions/__tests__/enrollment.test.ts`
+
+### TASK-CA-BE-04 · Backend · Flujos con invitado
+- **Archivos:** `src/actions/guest.ts` (3 escrituras del titular; con D2 también las de `guest_enrollments`), `src/actions/admin-guest.ts` (D2), `src/actions/__tests__/guest.test.ts`, `admin-guest.test.ts`
+- **Tests 🔴:** guarda estructural `src/__tests__/cancellation-audit-writers.test.ts`. Encontró 14 escrituras literales en `guest.ts`, `admin.ts` y `admin-guest.ts`, y ahora exige los helpers. Los tests existentes de guest y admin-guest siguen en verde.
+- **Verificar:** `pnpm test src/__tests__/cancellation-audit-writers.test.ts src/actions/__tests__/guest.test.ts src/actions/__tests__/admin-guest.test.ts`
+
+### TASK-CA-BE-05 · Backend · Cancelaciones del estudio
+- **Archivos:** `src/actions/admin.ts` (`cancelClassAction`, `suspendSubscriptionAction`), `src/actions/__tests__/admin-class.test.ts`, `admin-subscription.test.ts`
+- **Tests 🔴:** cubiertos por la guarda estructural de BE-04 y los tests unitarios del helper. El reembolso existente no cambia.
+- **Verificar:** `pnpm test src/__tests__/cancellation-audit-writers.test.ts src/actions/__tests__/admin-class.test.ts src/actions/__tests__/admin-subscription.test.ts`
+
+### TASK-CA-BE-06 · Backend · Regresión por filas `cancelled` que antes se borraban
+- **Archivos:** lectores de `class_enrolleds`: `src/app/(portal)/client/{classes,reservations}/page.tsx`, `src/components/sections/Schedule.tsx`, `src/lib/guest/capacity.ts`, `src/lib/queries/{check-subscription-expiration,next-class,coach}.ts`, `src/app/(portal)/admin/{classes,users/[userId]}/page.tsx`, `src/app/(portal)/coach/classes/page.tsx`
+- **Descripción:** auditar con `rg` que cada lectura que cuente cupo, muestre «inscrito» o calcule estadísticas excluya `CANCELLED_ENROLLMENT_STATUSES`. Una cancelación a tiempo ahora deja fila, cuando antes desaparecía.
+- **Resultado:** todos los lectores ya excluyen los estados cancelados. `client/reservations` los muestra a propósito en su filtro «Canceladas» y el historial admin los cuenta a propósito. **No hubo cambios en producción.**
+- **Test:** `src/lib/guest/__tests__/capacity-cancelled-rows.test.ts` verifica, con SQL real, que el cupo excluye `cancelled`/`late_cancelled` (tanto titulares como invitados).
+- **Verificar:** `pnpm test src/lib/guest src/lib/queries`
+
+### TASK-CA-SEC-01 · Seguridad · Query admin-only y frontera de datos
+- **Archivos:** `src/lib/queries/admin-enrollment-audit.ts`, `src/lib/queries/__tests__/admin-enrollment-audit.test.ts`, `src/lib/queries/__tests__/coach-queries-shape.test.ts`, `src/__tests__/audit-import-boundary.test.ts`
+- **Tests 🔴:**
+  1. `getClassEnrollmentAudit(id, { role:'coach' })`, con `{ role:'client' }` y con `null`, lanza `ForbiddenError` **sin tocar `db`** (`db.select` no se llama).
+  2. Con `{ role:'admin' }`, devuelve `bookedAt` y `cancelledAt` en ISO.
+  3. El serializador pone `cancelledAt = null` si el estado es `pending`/`attended`/`absent`, aunque la BD traiga un valor.
+  4. `getClassEnrollments` y `getCancelledEnrollments` (coach) proyectan **exactamente** `['enrollmentId','status','studentName','studentEmail']`. Se captura el objeto pasado a `db.select`, se comparan sus llaves y se verifica que no aparezcan `createdAt` ni `cancelledAt`.
+  5. Frontera estática: ningún archivo en `src/app/(portal)/{coach,client}/**` ni en `src/components/{coach,client}/**` importa `admin-enrollment-audit`.
+- **Verificar:** `pnpm test src/lib/queries/__tests__/admin-enrollment-audit.test.ts src/lib/queries/__tests__/coach-queries-shape.test.ts src/__tests__/audit-import-boundary.test.ts`
+
+### TASK-CA-FE-01 · Frontend · `formatAuditDateTime`
+- **Archivos:** `src/lib/utils/date.ts`, `src/lib/utils/__tests__/date-audit-format.test.ts`
+- **Tests 🔴:**
+  - `2026-09-25T01:05:00Z` → `24/09/2026, 07:05 PM`, porque en CDMX sigue siendo el día anterior.
+  - `2026-09-24T06:00:00Z` → `24/09/2026, 12:00 AM`.
+  - Mediodía → `12:00 PM`.
+  - La salida siempre cumple `/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2} (AM|PM)$/` (fast-check sobre fechas 2020–2035).
+  - `null` o una fecha inválida → `'Sin registro'`.
+- **Verificar:** `pnpm test src/lib/utils/__tests__/date-audit-format.test.ts`
+
+### TASK-CA-FE-02 · Frontend · Panel admin de asistencia
+- **Archivos:** `src/app/(portal)/admin/attendance/[classId]/page.tsx`, `src/components/admin/CancellationAuditList.tsx` (nuevo), `src/components/admin/AdminGuestSection.tsx` y `src/components/coach/AttendanceSheet.tsx` (prop opcional `bookedAtLabel`), `src/app/(portal)/admin/users/[userId]/page.tsx` y `src/components/admin/ClientHistory.tsx` (D5). Tests: `admin/attendance/[classId]/__tests__/page.test.tsx`, `CancellationAuditList.test.tsx`, `ClientHistory.audit.test.tsx`, `AttendanceSheet.test.tsx`.
+- **Tests 🔴:**
+  - En la página admin, una fila `late_cancelled` muestra «Reservó: 24/09/2026, 09:00 AM», «Canceló: 24/09/2026, 10:15 AM» y el badge «Cancelación tardía».
+  - Una fila activa muestra «Reservó: …» y **no** «Canceló».
+  - Una fila cancelada con `cancelledAt=null` muestra «Canceló: Sin registro».
+  - `AttendanceSheet` sin `bookedAtLabel`, que es como lo usa el coach, no muestra «Reservó».
+  - La página del coach (test existente o nuevo) no muestra «Reservó» ni «Canceló».
+  - Si el rol no es admin, hay `redirect('/login')` (ya existe; se agrega el test).
+- **Verificar:** `pnpm test "src/app/(portal)/admin/attendance" src/components/admin src/components/coach/__tests__/AttendanceSheet.test.tsx`
+
+### TASK-CA-LEGAL-01 · Términos y Condiciones
+- **Archivos:** `src/app/terminos-y-condiciones/page.tsx` (página existente; se reescribe su §5), `src/app/terminos-y-condiciones/__tests__/page.test.tsx`
+- **Descripción:** publicar la cláusula de SPEC §5.2 adaptada a los numerales 5.1–5.9. La cifra de minutos se interpola desde `GRACE_PERIOD_MINUTES`. La fecha pasa a «24 de septiembre de 2026».
+- **Tests 🔴:**
+  - Contiene «veinticuatro (24) horas de anticipación» con reintegro.
+  - Contiene «diez (10) minutos» contados desde la «Hora de la Reserva», «aun cuando falten menos de veinticuatro (24) horas».
+  - Define la cancelación tardía «no da derecho a la reposición del Crédito».
+  - Menciona invitados, la cancelación por el Estudio, la hora de la Ciudad de México y PROFECO.
+  - Muestra la fecha de actualización y conserva `metadata.title`.
+- **Verificar:** `pnpm test src/app/terminos-y-condiciones`
+
+### TASK-CA-FE-03 · Frontend · Enlace a la política en los avisos de cancelación tardía
+- **Archivos:** `src/components/client/CancellationPolicyLink.tsx` (nuevo), `CancellationModal.tsx` (el copy ahora menciona que ya pasaron los 10 min), `CancelGuestDialog.tsx`, `src/components/client/__tests__/CancellationPolicyLink.test.tsx`
+- **Tests 🔴:** hay un link «Ver política de cancelación» → `/terminos-y-condiciones` (`target=_blank`, `rel=noopener`) y el aviso menciona los 10 minutos.
+- **Verificar:** `pnpm test src/components/client src/components/__tests__/CancelGuestDialog.test.tsx`
+
+### TASK-CA-VERIFY-01 · Verificación final
+- `pnpm test` → suite completa en verde.
+- `pnpm exec tsc --noEmit` → limpio.
+- `pnpm lint` → sin errores nuevos en los archivos del feature.
+- `pnpm build` → OK.
+- **E2E manual contra una BD no productiva:**
+  1. Reservar y cancelar en menos de 10 min con la clase en menos de 24 h: el crédito vuelve.
+  2. Reservar, esperar más de 10 min y cancelar: queda como tardía.
+  3. Volver a reservar la misma clase.
+  4. Revisar las fechas en `/admin/attendance/[id]` y comprobar que no aparecen en `/coach/attendance/[id]`.
+
+---
+
 # TASK-QR-CHECKIN — Asistencia a Clases mediante Código QR
 
 **Estado:** ✅ Ejecutado (2026-09-23). Suite: 653/653 tests, `tsc` limpio, `pnpm build` OK y `pnpm lint` sin errores en los archivos de este feature. **Pendiente (usuario):** TASK-QR-DB-03 y el E2E manual de TASK-QR-VERIFY-01.

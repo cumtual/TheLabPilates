@@ -12,6 +12,7 @@ import {
 } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { ClientHistory } from '@/components/admin/ClientHistory';
+import { assertAdminViewer, toAuditLabels, type AuditViewer } from '@/lib/queries/admin-enrollment-audit';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -20,7 +21,10 @@ function formatDate(date: Date): string {
   return `${day}/${month}/${year}`;
 }
 
-async function getClientData(userId: string) {
+async function getClientData(userId: string, viewer: AuditViewer) {
+  // Incluye timestamps de auditoría (reserva/cancelación): solo admin.
+  assertAdminViewer(viewer);
+
   // Fetch user info
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
@@ -66,6 +70,8 @@ async function getClientData(userId: string) {
       customName: openClasses.customName,
       classDate: openClasses.classDate,
       status: classEnrollments.status,
+      createdAt: classEnrollments.createdAt,
+      cancelledAt: classEnrollments.cancelledAt,
     })
     .from(classEnrollments)
     .innerJoin(openClasses, eq(classEnrollments.openClassId, openClasses.id))
@@ -122,6 +128,7 @@ async function getClientData(userId: string) {
         ? formatDate(new Date(record.classDate))
         : '--/--/----',
       status: record.status,
+      ...toAuditLabels(record.status, record.createdAt, record.cancelledAt),
     })),
   };
 }
@@ -140,7 +147,7 @@ export default async function ClientHistoryPage({
   let error: string | null = null;
 
   try {
-    data = await getClientData(userId);
+    data = await getClientData(userId, session);
   } catch {
     error = 'No se pudo cargar el historial del cliente. Intenta de nuevo.';
   }

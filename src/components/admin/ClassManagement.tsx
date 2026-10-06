@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { cancelClassAction } from '@/actions/admin';
 import { formatFriendlyDate, formatRelativeDate } from '@/lib/utils/date';
-import { getClassDisplayName } from '@/lib/utils/class-type';
+import { getClassDisplayName, type ClassType } from '@/lib/utils/class-type';
 import { Badge, type BadgeVariant } from '@/components/ui/Badge';
 import { Pagination } from '@/components/ui/Pagination';
 import { EditClassModal } from '@/components/coach/EditClassModal';
@@ -36,7 +36,7 @@ interface ClassManagementProps {
 }
 
 type StatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
-type ClassTypeFilter = 'all' | 'barre' | 'mat_pilates' | 'yoga' | 'personalizada';
+type ClassTypeFilter = 'all' | ClassType;
 
 const statusLabels: Record<string, string> = {
   scheduled: 'Programada',
@@ -62,6 +62,7 @@ const typeFilterLabels: Record<ClassTypeFilter, string> = {
   barre: 'Barre',
   mat_pilates: 'Mat Pilates',
   yoga: 'Yoga',
+  sculpt: 'Sculpt',
   personalizada: 'Personalizada',
 };
 
@@ -121,6 +122,7 @@ export default function ClassManagement({ classes }: ClassManagementProps) {
     barre: statusFiltered.filter((c) => c.classType === 'barre').length,
     mat_pilates: statusFiltered.filter((c) => c.classType === 'mat_pilates').length,
     yoga: statusFiltered.filter((c) => c.classType === 'yoga').length,
+    sculpt: statusFiltered.filter((c) => c.classType === 'sculpt').length,
     personalizada: statusFiltered.filter((c) => c.classType === 'personalizada').length,
   };
 

@@ -12,6 +12,8 @@ export interface AdminGuestData {
   status: EnrollmentStatus;
   registeredById: string;
   registeredByName: string | null;
+  /** Fecha de reserva ya formateada (auditoría admin). */
+  bookedAtLabel?: string;
 }
 
 interface AdminGuestSectionProps {
@@ -66,6 +68,11 @@ export function AdminGuestSection({ classId, guests }: AdminGuestSectionProps) {
                       : 'Invitado por usuario'}
                     {guest.registeredByName ? ` (${guest.registeredByName})` : ''}
                   </p>
+                  {guest.bookedAtLabel && (
+                    <p className="font-body text-xs text-outline">
+                      Reservó: {guest.bookedAtLabel}
+                    </p>
+                  )}
                 </div>
 
                 {guest.origin === 'admin' && (
