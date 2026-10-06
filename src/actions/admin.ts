@@ -19,7 +19,8 @@ import type { ActionResult } from '@/lib/types';
 import { ALL_ROLES } from '@/lib/types/roles';
 import type { UserRole } from '@/lib/types/roles';
 import { parseDateTimeLocalAsMexicoCity, formatShortDateTime } from '@/lib/utils/date';
-import { getClassDisplayName } from '@/lib/utils/class-type';
+import { canRoleCreateClassType, CUSTOM_CLASS_TYPE, getClassDisplayName } from '@/lib/utils/class-type';
+import { buildEnrollmentCancellationPatch, buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
 
 export async function cancelClassAction(classId: string): Promise<ActionResult> {
   const session = await getSession();
@@ -90,7 +91,7 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
 
       await tx
         .update(classEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildEnrollmentCancellationPatch('cancelled'))
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
     }
 
@@ -99,7 +100,7 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
     for (const guest of pendingGuestEnrollments) {
       await tx
         .update(guestEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildGuestCancellationPatch('cancelled'))
         .where(eq(guestEnrollments.id, guest.guestEnrollmentId));
 
       await tx
@@ -324,7 +325,7 @@ export async function suspendSubscriptionAction(
     for (const enrollment of futureEnrollments) {
       await tx
         .update(classEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildEnrollmentCancellationPatch('cancelled'))
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
 
       // Open Lab has no per-session credits to restore.
@@ -596,8 +597,7 @@ export async function adminCreateClassAction(
   }
 
   // Validate class type
-  const validClassTypes = ['yoga', 'mat_pilates', 'barre', 'personalizada'];
-  if (!classType || !validClassTypes.includes(classType)) {
+  if (!canRoleCreateClassType(session.role, classType)) {
     return { success: false, error: 'Tipo de clase no válido.', field: 'classType' };
   }
 
@@ -605,7 +605,7 @@ export async function adminCreateClassAction(
   const customName = formData.get('customName') as string | null;
   let storedCustomName: string | null = null;
 
-  if (classType === 'personalizada') {
+  if (classType === CUSTOM_CLASS_TYPE) {
     const trimmedName = customName?.trim() ?? '';
     if (trimmedName.length === 0) {
       return { success: false, error: 'El nombre de la clase personalizada es obligatorio.', field: 'customName' };
@@ -634,7 +634,7 @@ export async function adminCreateClassAction(
       classDate: date,
       coachUserId: coachId,
       capacity,
-      classType: classType as 'yoga' | 'mat_pilates' | 'barre' | 'personalizada',
+      classType,
       customName: storedCustomName,
       status: 'scheduled',
       available: 'available',

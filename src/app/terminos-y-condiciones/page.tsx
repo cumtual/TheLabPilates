@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { LegalShell, LegalSection } from '@/components/legal/LegalShell';
+import { GRACE_PERIOD_MINUTES } from '@/lib/utils/date';
 
 export const metadata: Metadata = {
   title: 'Términos y Condiciones',
@@ -12,7 +13,7 @@ export default function TermsPage() {
     <LegalShell
       title="Términos y Condiciones de Uso"
       subtitle="Contrato de adhesión aplicable al uso de la plataforma de reservas, las instalaciones y los servicios de The Lab Pilates Studio."
-      lastUpdated="12 de septiembre de 2026"
+      lastUpdated="24 de septiembre de 2026"
     >
       <LegalSection title="1. Aceptación y capacidad legal">
         <p>
@@ -78,27 +79,78 @@ export default function TermsPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="5. Reservas y política de cancelación (24 horas)">
-        <ul className="list-disc pl-6 space-y-2">
-          <li>
-            Las cancelaciones deben realizarse con un{' '}
-            <strong className="text-soft-charcoal">mínimo de 24 horas de anticipación</strong>{' '}
-            a la hora programada de la clase para que el crédito sea reembolsado a su saldo.
-          </li>
-          <li>
-            Las cancelaciones con menos de 24 horas o la inasistencia (<em>no-show</em>)
-            implican la pérdida del crédito, sin derecho a reembolso.
-          </li>
-          <li>
-            Si el Estudio cancela la clase por causa de fuerza mayor o decisión administrativa,
-            se devolverá en su totalidad el crédito de la clase y, en su caso, el crédito de
-            invitado.
-          </li>
-          <li>
-            El control de cupos es estricto; una reserva no confirmada previamente no garantiza
-            lugar en clase.
-          </li>
-        </ul>
+      <LegalSection title="5. Política de cancelaciones y reembolso de créditos">
+        <p>
+          <strong className="text-soft-charcoal">5.1 Definiciones.</strong> Para efectos de
+          esta cláusula: (a) <em>«Reserva»</em> es el lugar que usted aparta en una clase a
+          través de la plataforma; (b) <em>«Crédito»</em> es cada sesión incluida en el paquete
+          o membresía contratada, que se descuenta al realizar una Reserva; (c){' '}
+          <em>«Hora de la Reserva»</em> es la fecha y hora en que la plataforma registra la
+          Reserva; y (d) <em>«Hora de Inicio»</em> es la fecha y hora programada para el
+          comienzo de la clase. Todos los horarios se rigen por la hora oficial de la Ciudad de
+          México (zona horaria America/Mexico_City), conforme al registro electrónico de la
+          plataforma.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.2 Cancelación con anticipación.</strong>{' '}
+          Usted puede cancelar su Reserva desde la plataforma. Si la cancelación se realiza con
+          al menos{' '}
+          <strong className="text-soft-charcoal">veinticuatro (24) horas de anticipación</strong>{' '}
+          a la Hora de Inicio, el Crédito se reintegra en su totalidad a la suscripción con la
+          que se hizo la Reserva, sin cargo ni penalización alguna.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">
+            5.3 Periodo de tolerancia por error ({GRACE_PERIOD_MINUTES} minutos).
+          </strong>{' '}
+          Con independencia de la anticipación con que se cancele, si usted cancela su Reserva
+          dentro de los{' '}
+          <strong className="text-soft-charcoal">diez ({GRACE_PERIOD_MINUTES}) minutos</strong>{' '}
+          naturales siguientes a la Hora de la Reserva, minuto diez incluido, el Crédito se
+          reintegra en su totalidad, aun cuando falten menos de veinticuatro (24) horas para la
+          Hora de Inicio. Este periodo sirve para corregir reservas hechas por error y aplica
+          siempre que la clase no haya iniciado.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.4 Cancelación tardía.</strong> Transcurrido
+          el periodo de tolerancia del numeral 5.3, la cancelación que se realice con menos de
+          veinticuatro (24) horas de anticipación a la Hora de Inicio se considera{' '}
+          <strong className="text-soft-charcoal">cancelación tardía</strong> y no da derecho a
+          la reposición del Crédito, ya que el lugar permaneció reservado a su nombre y no pudo
+          ofrecerse a otras personas. Antes de confirmar una cancelación tardía, la plataforma
+          le informará que el Crédito no será reintegrado y requerirá su confirmación expresa.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.5 Clases iniciadas e inasistencia.</strong>{' '}
+          No es posible cancelar una Reserva después de la Hora de Inicio. La inasistencia sin
+          cancelación previa (<em>no-show</em>) implica la pérdida del Crédito, sin derecho a
+          reembolso.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.6 Invitados.</strong> Las reglas de los
+          numerales 5.2 a 5.5 aplican también a los lugares reservados para invitados y al
+          crédito de invitado correspondiente; el periodo de tolerancia se cuenta a partir de la
+          hora en que se registró al invitado.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.7 Cancelación por parte del Estudio.</strong>{' '}
+          Si el Estudio cancela una clase por causa de fuerza mayor o decisión administrativa,
+          los Créditos de todas las Reservas afectadas, y en su caso el crédito de invitado, se
+          reintegran en su totalidad sin que usted deba solicitarlo.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.8 Cupo y registro.</strong> El control de
+          cupos es estricto; una reserva no confirmada previamente no garantiza lugar en clase.
+          La plataforma conserva la fecha y hora de cada Reserva y de cada cancelación, que
+          sirven para aplicar esta política; usted puede solicitar su aclaración a través de los
+          medios de contacto del Estudio.
+        </p>
+        <p>
+          <strong className="text-soft-charcoal">5.9 Derechos del consumidor.</strong> Nada de
+          lo previsto en esta cláusula limita ni restringe los derechos que la Ley Federal de
+          Protección al Consumidor le otorga; usted puede acudir a la Procuraduría Federal del
+          Consumidor (PROFECO) para cualquier queja o reclamación.
+        </p>
       </LegalSection>
 
       <LegalSection title="6. Puntualidad y acceso a clases">

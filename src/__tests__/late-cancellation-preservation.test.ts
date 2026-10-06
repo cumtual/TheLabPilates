@@ -54,6 +54,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
   notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
+  inArray: vi.fn((...args: unknown[]) => ({ type: 'inArray', args })),
 }));
 
 import { cancelReservationAction } from '@/actions/enrollment';
@@ -193,19 +194,24 @@ describe('Preservation Property 1: Timely Cancellation Still Refunds Credit', ()
           });
 
           // Track transaction callback execution
-          let txDeleteCalled = false;
+          let txSoftCancelCalled = false;
           let txExecuteCalled = false;
 
-          (db.transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (cb: (tx: unknown) => Promise<void>) => {
+          (db.transaction as ReturnType<typeof vi.fn>).mockImplementationOnce(async (cb: (tx: unknown) => Promise<unknown>) => {
             const mockTx = {
-              delete: vi.fn().mockReturnValue({
-                where: vi.fn().mockResolvedValue(undefined),
+              update: vi.fn().mockReturnValue({
+                set: vi.fn().mockReturnValue({
+                  where: vi.fn().mockReturnValue({
+                    returning: vi.fn().mockResolvedValue([{ id: enrollmentId }]),
+                  }),
+                }),
               }),
               execute: vi.fn().mockResolvedValue(undefined),
             };
-            await cb(mockTx);
-            txDeleteCalled = mockTx.delete.mock.calls.length > 0;
+            const out = await cb(mockTx);
+            txSoftCancelCalled = mockTx.update.mock.calls.length > 0;
             txExecuteCalled = mockTx.execute.mock.calls.length > 0;
+            return out;
           });
 
           const result = await cancelReservationAction(enrollmentId);
@@ -219,8 +225,8 @@ describe('Preservation Property 1: Timely Cancellation Still Refunds Credit', ()
           // Transaction must have been called
           expect(db.transaction).toHaveBeenCalledTimes(1);
 
-          // Both delete (enrollment) and execute (increment days_remaining) must be called
-          expect(txDeleteCalled).toBe(true);
+          // Both soft-cancel update (enrollment) and execute (increment days_remaining) must be called
+          expect(txSoftCancelCalled).toBe(true);
           expect(txExecuteCalled).toBe(true);
         }
       ),

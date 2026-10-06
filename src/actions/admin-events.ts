@@ -19,6 +19,7 @@ import {
 import { getEventClassAvailable } from '@/lib/events/capacity';
 import { parseDateTimeLocalAsMexicoCity, formatFullDateTime } from '@/lib/utils/date';
 import type { ActionResult } from '@/lib/types';
+import { canRoleCreateClassType, CUSTOM_CLASS_TYPE } from '@/lib/utils/class-type';
 
 function parseMexicoCityDate(value: string | null): Date | null {
   if (!value) return null;
@@ -216,14 +217,13 @@ export async function addEventClassAction(
     return { success: false, error: 'La capacidad debe ser entre 1 y 20.', field: 'capacity' };
   }
 
-  const validClassTypes = ['yoga', 'mat_pilates', 'barre', 'personalizada'];
-  if (!classType || !validClassTypes.includes(classType)) {
+  if (!canRoleCreateClassType(session.role, classType)) {
     return { success: false, error: 'Tipo de clase no válido.', field: 'classType' };
   }
 
   const customName = formData.get('customName') as string | null;
   let storedCustomName: string | null = null;
-  if (classType === 'personalizada') {
+  if (classType === CUSTOM_CLASS_TYPE) {
     const trimmedName = customName?.trim() ?? '';
     if (trimmedName.length === 0) {
       return { success: false, error: 'El nombre de la clase personalizada es obligatorio.', field: 'customName' };
@@ -250,7 +250,7 @@ export async function addEventClassAction(
       classDate: date,
       coachUserId: coachId,
       capacity,
-      classType: classType as 'yoga' | 'mat_pilates' | 'barre' | 'personalizada',
+      classType,
       customName: storedCustomName,
       status: 'scheduled',
       available: 'available',

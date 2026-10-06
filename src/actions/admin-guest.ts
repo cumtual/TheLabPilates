@@ -7,6 +7,7 @@ import { openClasses, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import type { ActionResult } from '@/lib/types';
+import { buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
 
 /**
  * Admin: add a guest to a class manually.
@@ -183,7 +184,7 @@ export async function adminRemoveGuestAction(
       // Cancel the guest enrollment
       await tx
         .update(guestEnrollments)
-        .set({ status: 'cancelled' })
+        .set(buildGuestCancellationPatch('cancelled'))
         .where(
           and(
             eq(guestEnrollments.id, guestEnrollmentId),

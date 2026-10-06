@@ -1,6 +1,6 @@
 'use server';
 
-import { eq, and, sql, notInArray } from 'drizzle-orm';
+import { eq, and, sql, notInArray, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { classEnrollments, openClasses, userSubscriptions, payments, subscriptions, guestEnrollments } from '@/db/schema';
@@ -8,6 +8,10 @@ import { getSession } from '@/lib/auth/session';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import { isWithinGracePeriod } from '@/lib/utils/date';
 import { generateCheckinToken } from '@/lib/checkin/token';
+import {
+  CANCELLED_ENROLLMENT_STATUSES,
+  buildEnrollmentCancellationPatch,
+} from '@/lib/enrollment/cancellation';
 import type { ActionResult } from '@/lib/types';
 
 export async function enrollInClassAction(classId: string): Promise<ActionResult> {
@@ -145,12 +149,36 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       tx.rollback();
     }
 
-    await tx.insert(classEnrollments).values({
-      openClassId: classId,
-      userSubscriptionId: userSub.id,
-      status: 'pending',
-      checkinToken: generateCheckinToken(),
-    });
+    // A cancellation keeps its row (admin audit), and uk_class_user_enrollment
+    // (open_class_id, user_suscription_id) would reject a second INSERT: reactivate
+    // the cancelled row instead. created_at restarts so the 10-min grace window
+    // counts from this new booking.
+    const reactivated = await tx
+      .update(classEnrollments)
+      .set({
+        status: 'pending',
+        createdAt: sql`now()`,
+        cancelledAt: null,
+        checkedInAt: null,
+        checkinToken: generateCheckinToken(),
+      })
+      .where(
+        and(
+          eq(classEnrollments.openClassId, classId),
+          eq(classEnrollments.userSubscriptionId, userSub.id),
+          inArray(classEnrollments.status, [...CANCELLED_ENROLLMENT_STATUSES])
+        )
+      )
+      .returning({ id: classEnrollments.id });
+
+    if (reactivated.length === 0) {
+      await tx.insert(classEnrollments).values({
+        openClassId: classId,
+        userSubscriptionId: userSub.id,
+        status: 'pending',
+        checkinToken: generateCheckinToken(),
+      });
+    }
 
     // Open Lab memberships don't use days_remaining — unlimited classes
     if (!isOpenLab) {
@@ -185,14 +213,28 @@ async function isOpenLabEnrollment(userSubscriptionId: string): Promise<boolean>
   return subRow?.guest === true;
 }
 
+type RefundOutcome = 'refunded' | 'not_pending' | 'error';
+
+/**
+ * Timely / grace cancellation: soft-cancel (the row is kept for the admin audit,
+ * with cancelled_at = now()) + credit refund, atomically. The status guard makes
+ * the refund idempotent: a concurrent or repeated request updates 0 rows and
+ * does NOT refund twice.
+ */
 async function refundEnrollment(
   enrollmentId: string,
   userSubscriptionId: string,
   isOpenLab: boolean
-): Promise<boolean> {
+): Promise<RefundOutcome> {
   try {
-    await db.transaction(async (tx) => {
-      await tx.delete(classEnrollments).where(eq(classEnrollments.id, enrollmentId));
+    return await db.transaction(async (tx) => {
+      const cancelled = await tx
+        .update(classEnrollments)
+        .set(buildEnrollmentCancellationPatch('cancelled'))
+        .where(and(eq(classEnrollments.id, enrollmentId), eq(classEnrollments.status, 'pending')))
+        .returning({ id: classEnrollments.id });
+
+      if (cancelled.length === 0) return 'not_pending';
 
       // Open Lab memberships don't use days_remaining — skip increment
       if (!isOpenLab) {
@@ -202,12 +244,15 @@ async function refundEnrollment(
           WHERE id = ${userSubscriptionId}
         `);
       }
+      return 'refunded';
     });
-    return true;
   } catch {
-    return false;
+    return 'error';
   }
 }
+
+const ALREADY_CANCELLED_ERROR = 'Esta reservación ya fue cancelada.';
+const CANCELLATION_FAILED_ERROR = 'No se pudo completar la cancelación. Intenta de nuevo.';
 
 export async function cancelReservationAction(enrollmentId: string): Promise<ActionResult> {
   const session = await getSession();
@@ -295,15 +340,18 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
   const withinGrace = isWithinGracePeriod(enrollment.createdAt);
 
   if (hoursUntilClass >= 24 || withinGrace) {
-    // Timely or grace cancellation: delete enrollment + refund credit (atomic)
-    const refunded = await refundEnrollment(
+    // Timely or grace cancellation: soft-cancel (audit) + refund credit (atomic)
+    const outcome = await refundEnrollment(
       enrollmentId,
       enrollment.userSubscriptionId,
       isOpenLab
     );
 
-    if (!refunded) {
-      return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+    if (outcome !== 'refunded') {
+      return {
+        success: false,
+        error: outcome === 'not_pending' ? ALREADY_CANCELLED_ERROR : CANCELLATION_FAILED_ERROR,
+      };
     }
 
     revalidatePath('/client/reservations');
@@ -380,14 +428,17 @@ export async function confirmLateCancellationAction(enrollmentId: string): Promi
 
   if (hoursUntilClass >= 24 || isWithinGracePeriod(enrollment.createdAt)) {
     const isOpenLab = await isOpenLabEnrollment(enrollment.userSubscriptionId);
-    const refunded = await refundEnrollment(
+    const outcome = await refundEnrollment(
       enrollmentId,
       enrollment.userSubscriptionId,
       isOpenLab
     );
 
-    if (!refunded) {
-      return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+    if (outcome !== 'refunded') {
+      return {
+        success: false,
+        error: outcome === 'not_pending' ? ALREADY_CANCELLED_ERROR : CANCELLATION_FAILED_ERROR,
+      };
     }
 
     revalidatePath('/client/reservations');
@@ -398,12 +449,17 @@ export async function confirmLateCancellationAction(enrollmentId: string): Promi
 
   // Late cancellation: set status to 'late_cancelled', no refund
   try {
-    await db
+    const cancelled = await db
       .update(classEnrollments)
-      .set({ status: 'late_cancelled' })
-      .where(eq(classEnrollments.id, enrollmentId));
+      .set(buildEnrollmentCancellationPatch('late_cancelled'))
+      .where(and(eq(classEnrollments.id, enrollmentId), eq(classEnrollments.status, 'pending')))
+      .returning({ id: classEnrollments.id });
+
+    if (cancelled.length === 0) {
+      return { success: false, error: ALREADY_CANCELLED_ERROR };
+    }
   } catch {
-    return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
+    return { success: false, error: CANCELLATION_FAILED_ERROR };
   }
 
   revalidatePath('/client/reservations');

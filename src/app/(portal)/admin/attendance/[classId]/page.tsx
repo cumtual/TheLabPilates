@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
-import { getCoachClassById, getClassEnrollments, getCancelledEnrollments, getClassGuestEnrollments } from '@/lib/queries/coach';
+import { getCoachClassById, getClassEnrollments, getClassGuestEnrollments } from '@/lib/queries/coach';
+import { getClassEnrollmentAudit } from '@/lib/queries/admin-enrollment-audit';
 import { getClassDisplayName } from '@/lib/utils/class-type';
 import { formatFullDateTime, getMexicoCityDayBounds } from '@/lib/utils/date';
 import { AttendanceSheet } from '@/components/coach/AttendanceSheet';
 import { AdminGuestSection } from '@/components/admin/AdminGuestSection';
+import { CancellationAuditList } from '@/components/admin/CancellationAuditList';
 import { Card } from '@/components/ui/Card';
 
 export default async function AdminAttendancePage({
@@ -41,9 +43,18 @@ export default async function AdminAttendancePage({
   const isFutureClass = dayBounds ? now < dayBounds.start : false;
   const attendanceClosed = dayBounds ? now > dayBounds.end : false;
 
-  const enrollments = await getClassEnrollments(classId);
-  const cancelledEnrollments = await getCancelledEnrollments(classId);
-  const guestEnrollments = await getClassGuestEnrollments(classId);
+  const [activeEnrollments, guestEnrollments, audit] = await Promise.all([
+    getClassEnrollments(classId),
+    getClassGuestEnrollments(classId),
+    // Timestamps de reserva/cancelación: solo admin (SPEC-CANCELLATION-AUDIT-AND-TERMS §3.5).
+    getClassEnrollmentAudit(classId, session),
+  ]);
+
+  const bookedAtById = new Map(audit.map((row) => [row.enrollmentId, row.bookedAt]));
+  const enrollments = activeEnrollments.map((e) => ({
+    ...e,
+    bookedAtLabel: bookedAtById.get(e.enrollmentId),
+  }));
 
   // Map guest data to the shape expected by AdminGuestSection
   const guestData = guestEnrollments.map((g) => ({
@@ -53,6 +64,7 @@ export default async function AdminAttendancePage({
     status: g.status as 'pending' | 'attended' | 'absent' | 'late_cancelled' | 'cancelled',
     registeredById: g.registeredById,
     registeredByName: g.registeredByName,
+    bookedAtLabel: bookedAtById.get(g.guestEnrollmentId),
   }));
 
   const typeLabel = getClassDisplayName(openClass.classType, openClass.customName);
@@ -96,6 +108,11 @@ export default async function AdminAttendancePage({
                     <p className="font-body text-xs text-on-surface-variant truncate">
                       {enrollment.studentEmail}
                     </p>
+                    {enrollment.bookedAtLabel && (
+                      <p className="font-body text-xs text-outline truncate">
+                        Reservó: {enrollment.bookedAtLabel}
+                      </p>
+                    )}
                   </div>
                   <span className="font-body text-xs text-outline px-2 py-1 bg-surface-container-low rounded">
                     Pendiente
@@ -125,35 +142,8 @@ export default async function AdminAttendancePage({
         <AdminGuestSection classId={classId} guests={guestData} />
       </div>
 
-      {/* Sección de cancelaciones */}
-      {cancelledEnrollments.length > 0 && (
-        <div className="mt-8">
-          <h2 className="font-headline text-title-md text-on-surface-variant mb-3">
-            Cancelaciones ({cancelledEnrollments.length})
-          </h2>
-          <div className="space-y-2">
-            {cancelledEnrollments.map((enrollment) => (
-              <Card key={enrollment.enrollmentId} className="flex items-center gap-3 opacity-70">
-                <div className="flex-1 min-w-0">
-                  <p className="font-body text-sm font-semibold text-on-surface truncate">
-                    {enrollment.studentName}
-                  </p>
-                  <p className="font-body text-xs text-on-surface-variant truncate">
-                    {enrollment.studentEmail}
-                  </p>
-                </div>
-                <span className={`font-body text-xs px-2 py-1 rounded ${
-                  enrollment.status === 'late_cancelled'
-                    ? 'bg-error/10 text-error'
-                    : 'bg-surface-container-low text-outline'
-                }`}>
-                  {enrollment.status === 'late_cancelled' ? 'Cancelación tardía' : 'Canceló'}
-                </span>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Historial de cancelaciones con fecha de reserva y de cancelación (solo admin) */}
+      <CancellationAuditList rows={audit} />
     </div>
   );
 }

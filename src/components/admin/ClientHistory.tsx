@@ -38,6 +38,10 @@ interface AttendanceRecord {
   customName: string | null;
   classDate: string;
   status: string | null;
+  /** Fecha y hora de reserva (CDMX), ya formateada. */
+  bookedAt?: string;
+  /** Fecha y hora de cancelación (CDMX); null si no está cancelada. */
+  cancelledAt?: string | null;
 }
 
 interface ClientHistoryProps {
@@ -253,23 +257,31 @@ export function ClientHistory({
           </h2>
           <div className="space-y-3">
             {paginatedAttendance.map((record) => (
-              <Card key={record.id}>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1 flex-1">
-                    <p className="font-body text-sm font-semibold text-on-surface">
-                      {getClassDisplayName(record.classType, record.customName)}
+              <div key={record.id} data-testid={`attendance-${record.id}`}>
+                <Card>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1 flex-1">
+                      <p className="font-body text-sm font-semibold text-on-surface">
+                        {getClassDisplayName(record.classType, record.customName)}
+                      </p>
+                      {record.status && (
+                        <Badge variant={enrollmentStatusVariant[record.status] ?? 'pending'}>
+                          {enrollmentStatusLabels[record.status] ?? record.status}
+                        </Badge>
+                      )}
+                      {record.bookedAt && (
+                        <p className="font-body text-xs text-outline">Reservó: {record.bookedAt}</p>
+                      )}
+                      {record.cancelledAt && (
+                        <p className="font-body text-xs text-outline">Canceló: {record.cancelledAt}</p>
+                      )}
+                    </div>
+                    <p className="font-body text-xs text-outline">
+                      {record.classDate}
                     </p>
-                    {record.status && (
-                      <Badge variant={enrollmentStatusVariant[record.status] ?? 'pending'}>
-                        {enrollmentStatusLabels[record.status] ?? record.status}
-                      </Badge>
-                    )}
                   </div>
-                  <p className="font-body text-xs text-outline">
-                    {record.classDate}
-                  </p>
-                </div>
-              </Card>
+                </Card>
+              </div>
             ))}
           </div>
           <Pagination currentPage={attendancePage} totalPages={attendanceTotalPages} onChange={setAttendancePage} />

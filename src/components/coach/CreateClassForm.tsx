@@ -7,14 +7,11 @@ import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
-import { getClassDisplayName } from '@/lib/utils/class-type';
+import { getClassDisplayName, getClassTypeOptions } from '@/lib/utils/class-type';
 import { parseDateTimeLocalAsMexicoCity, formatFullDateTime } from '@/lib/utils/date';
 
-const classTypeOptions = [
-  { value: 'yoga', label: 'Yoga' },
-  { value: 'mat_pilates', label: 'Mat Pilates' },
-  { value: 'barre', label: 'Barre' },
-];
+// Sin «Personalizada»: solo admin puede crearlas (validado también en createClassAction).
+const classTypeOptions = getClassTypeOptions('coach');
 
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return '';

@@ -57,6 +57,7 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn(),
   count: vi.fn(() => 'count_fn'),
   notInArray: vi.fn((...args: unknown[]) => ({ type: 'notInArray', args })),
+  inArray: vi.fn((...args: unknown[]) => ({ type: 'inArray', args })),
 }));
 
 import { cancelReservationAction, confirmLateCancellationAction } from '@/actions/enrollment';
@@ -254,7 +255,9 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
           setupCancelSelectMock();
 
           // Mock db.update for setting status to late_cancelled
-          const mockWhere = vi.fn().mockResolvedValue(undefined);
+          const mockWhere = vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: enrollmentId }]),
+          });
           const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
           (db.update as ReturnType<typeof vi.fn>).mockReturnValueOnce({ set: mockSet });
 
@@ -266,7 +269,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
 
           // db.update should have been called to set status to 'late_cancelled'
           expect(db.update).toHaveBeenCalledTimes(1);
-          expect(mockSet).toHaveBeenCalledWith({ status: 'late_cancelled' });
+          expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ status: 'late_cancelled' }));
 
           // Transaction should NOT be called (no atomic delete + increment)
           expect(db.transaction).not.toHaveBeenCalled();
@@ -355,7 +358,9 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
     // Enrollment + ownership select
     setupCancelSelectMock();
 
-    const mockWhere = vi.fn().mockResolvedValue(undefined);
+    const mockWhere = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([{ id: enrollmentId }]),
+    });
     const mockSet = vi.fn().mockReturnValue({ where: mockWhere });
     (db.update as ReturnType<typeof vi.fn>).mockReturnValueOnce({ set: mockSet });
 
@@ -364,7 +369,7 @@ describe('Property 1: Bug Condition - Late Cancellation Does Not Refund Credit',
     // Should succeed with late_cancelled status set
     expect(confirmResult.success).toBe(true);
     expect(db.update).toHaveBeenCalledTimes(1);
-    expect(mockSet).toHaveBeenCalledWith({ status: 'late_cancelled' });
+    expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({ status: 'late_cancelled' }));
 
     // No transaction = no days_remaining increment
     expect(db.transaction).not.toHaveBeenCalled();

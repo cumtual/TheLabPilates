@@ -6,16 +6,11 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { parseDateTimeLocalAsMexicoCity, formatFullDateTime } from '@/lib/utils/date';
-import { getClassDisplayName } from '@/lib/utils/class-type';
+import { getClassDisplayName, getClassTypeOptions } from '@/lib/utils/class-type';
 import Link from 'next/link';
 import type { ActionResult } from '@/lib/types';
 
-const classTypeOptions = [
-  { value: 'yoga', label: 'Yoga' },
-  { value: 'mat_pilates', label: 'Mat Pilates' },
-  { value: 'barre', label: 'Barre' },
-  { value: 'personalizada', label: 'Personalizada' },
-];
+const classTypeOptions = getClassTypeOptions('admin');
 
 interface Coach {
   id: string;
