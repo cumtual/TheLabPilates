@@ -9,6 +9,8 @@ import {
   pgEnum,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+// Relative import: drizzle-kit and the seed script run without the @/ alias.
+import { CLASS_TYPES } from '../lib/utils/class-type';
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['client', 'coach', 'admin']);
@@ -22,12 +24,9 @@ export const classAvailabilityEnum = pgEnum('class_availability', [
   'not_available',
   'full',
 ]);
-export const classTypeEnum = pgEnum('class_type', [
-  'yoga',
-  'mat_pilates',
-  'barre',
-  'personalizada',
-]);
+// Valores en src/lib/utils/class-type.ts (CLASS_TYPES); 'sculpt' llega con
+// sql/manual/2026-10-06_001_class_type_sculpt.sql.
+export const classTypeEnum = pgEnum('class_type', CLASS_TYPES);
 export const classStatusEnum = pgEnum('class_status', [
   'scheduled',
   'cancelled',

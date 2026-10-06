@@ -6,6 +6,7 @@ import { db } from '@/db';
 import { openClasses, classEnrollments, guestEnrollments } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
+import { canRoleCreateClassType, CUSTOM_CLASS_TYPE } from '@/lib/utils/class-type';
 import { parseDateTimeLocalAsMexicoCity, getMexicoCityDayBounds } from '@/lib/utils/date';
 import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-expiration';
 import { getTotalOccupied } from '@/lib/guest/capacity';
@@ -335,8 +336,16 @@ export async function createClassAction(
     };
   }
 
-  // Validate class type
-  if (!classType || !['yoga', 'mat_pilates', 'barre'].includes(classType)) {
+  // Validate class type. This form has no custom_name, so it only accepts the
+  // coach catalog (everything except 'personalizada') even when an admin calls it.
+  if (classType === CUSTOM_CLASS_TYPE) {
+    return {
+      success: false,
+      error: 'Solo un administrador puede crear clases personalizadas.',
+      field: 'classType',
+    };
+  }
+  if (!canRoleCreateClassType('coach', classType)) {
     return {
       success: false,
       error: 'Tipo de clase no válido.',
@@ -349,7 +358,7 @@ export async function createClassAction(
     classDate: date,
     coachUserId: session.sub,
     capacity,
-    classType: classType as 'yoga' | 'mat_pilates' | 'barre',
+    classType,
     status: 'scheduled',
     available: 'available',
   });

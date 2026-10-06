@@ -10,15 +10,10 @@ import {
   formatFullDateTime,
   toMexicoCityDatetimeLocal,
 } from '@/lib/utils/date';
-import { getClassDisplayName } from '@/lib/utils/class-type';
+import { getClassDisplayName, getClassTypeOptions } from '@/lib/utils/class-type';
 import type { ActionResult } from '@/lib/types';
 
-const classTypeOptions = [
-  { value: 'yoga', label: 'Yoga' },
-  { value: 'mat_pilates', label: 'Mat Pilates' },
-  { value: 'barre', label: 'Barre' },
-  { value: 'personalizada', label: 'Personalizada' },
-];
+const classTypeOptions = getClassTypeOptions('admin');
 
 interface Coach {
   id: string;

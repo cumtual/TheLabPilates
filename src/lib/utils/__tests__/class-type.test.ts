@@ -14,11 +14,12 @@ import { getClassDisplayName, CLASS_TYPE_LABELS } from '../class-type';
  * Validates: Requirements 5.1, 5.2
  */
 
-const PREDEFINED_TYPES = ['yoga', 'mat_pilates', 'barre'] as const;
+const PREDEFINED_TYPES = ['yoga', 'mat_pilates', 'barre', 'sculpt'] as const;
 const EXPECTED_LABELS: Record<string, string> = {
   yoga: 'Yoga',
   mat_pilates: 'Mat Pilates',
   barre: 'Barre',
+  sculpt: 'Sculpt',
 };
 
 describe('getClassDisplayName', () => {
@@ -179,6 +180,7 @@ describe('getClassDisplayName', () => {
         yoga: 'Yoga',
         mat_pilates: 'Mat Pilates',
         barre: 'Barre',
+        sculpt: 'Sculpt',
       });
     });
   });
