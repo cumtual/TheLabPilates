@@ -2,9 +2,12 @@
 
 import { eq, and } from 'drizzle-orm';
 import { db } from '@/db';
-import { payments, userSubscriptions } from '@/db/schema';
+import { payments, subscriptions, userSubscriptions } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import type { ActionResult } from '@/lib/types';
+import { buildSubscriptionSnapshot, insertBalancesFromRules } from '@/lib/subscription/credits';
+
+const PACKAGE_UNAVAILABLE_ERROR = 'Este paquete ya no está disponible.';
 
 export async function purchaseSubscriptionAction(
   subscriptionId: string,
@@ -26,6 +29,15 @@ export async function purchaseSubscriptionAction(
   // Validate subscriptionId is provided
   if (!subscriptionId) {
     return { success: false, error: 'Debes seleccionar un paquete.' };
+  }
+
+  // Only active, non-deleted catalog packages can be bought (H9).
+  const pkg = await db.query.subscriptions.findFirst({
+    where: eq(subscriptions.id, subscriptionId),
+    with: { rules: true },
+  });
+  if (!pkg || !pkg.isActive || pkg.deletedAt) {
+    return { success: false, error: PACKAGE_UNAVAILABLE_ERROR };
   }
 
   // Check for existing pending (unconfirmed) payment — block purchase if one exists (Req 5.6)
@@ -61,23 +73,37 @@ export async function purchaseSubscriptionAction(
       )
     );
 
-  // Create payment record with confirmed = false
-  const [payment] = await db
-    .insert(payments)
-    .values({
-      paymentType,
-      confirmed: false,
-    })
-    .returning();
+  // Payment + user_subscription + copy of the package's conditions, atomically (D4).
+  // The current active subscription is NOT touched here: it expires when the admin
+  // confirms this payment (S3), so a rejected payment leaves it intact.
+  await db.transaction(async (tx) => {
+    // Create payment record with confirmed = false
+    const [payment] = await tx
+      .insert(payments)
+      .values({
+        paymentType,
+        confirmed: false,
+      })
+      .returning();
 
-  // Create user_subscription linked to payment with active=false and expiration_date=null
-  await db.insert(userSubscriptions).values({
-    paymentId: payment.id,
-    subscriptionId,
-    userId: session.sub,
-    active: false,
-    daysRemaining: 0,
-    expirationDate: null,
+    // Create user_subscription linked to payment with active=false and expiration_date=null
+    const [userSub] = await tx
+      .insert(userSubscriptions)
+      .values({
+        paymentId: payment.id,
+        subscriptionId,
+        userId: session.sub,
+        active: false,
+        daysRemaining: 0,
+        expirationDate: null,
+        ...buildSubscriptionSnapshot(pkg),
+      })
+      .returning({ id: userSubscriptions.id });
+
+    if (pkg.kind === 'special') {
+      if (!userSub) throw new Error('No se pudo registrar la suscripción.');
+      await insertBalancesFromRules(tx, userSub.id, [...pkg.rules].sort((a, b) => a.sortOrder - b.sortOrder));
+    }
   });
 
   if (paymentType === 'transfer') {

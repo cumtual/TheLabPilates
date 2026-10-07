@@ -5,6 +5,8 @@ import { openClasses, classEnrollments, guestEnrollments, users } from '@/db/sch
 import { eq, count, and, gt, notInArray, isNull } from 'drizzle-orm';
 import { ClassList, type ClassItem } from '@/components/client/ClassList';
 import { Pagination } from '@/components/ui/Pagination';
+import { getActiveSpecialPackage } from '@/lib/queries/packages';
+import { creditHintFor } from '@/lib/subscription/rules';
 
 const PAGE_SIZE = 10;
 
@@ -77,6 +79,9 @@ export default async function ClientClassesPage({
     // Paginate in-memory (post-filter pagination)
     const paginated = available.slice(offset, offset + PAGE_SIZE);
 
+    // Special packages: which credit group each class would use (SPEC-SPECIAL-PACKAGES §8.3)
+    const special = await getActiveSpecialPackage(session.sub);
+
     classes = paginated.map((c) => ({
       id: c.id,
       classDate: c.classDate ?? new Date(),
@@ -85,6 +90,15 @@ export default async function ClientClassesPage({
       capacity: c.capacity,
       enrolledCount: c.enrolledCount + (guestCountMap.get(c.id) ?? 0),
       coachName: c.coachName,
+      ...(special
+        ? {
+            creditHint: creditHintFor(
+              special.balances,
+              { classType: c.classType, classDate: c.classDate ?? new Date() },
+              special.packageName
+            ),
+          }
+        : {}),
     }));
   } catch {
     error = true;

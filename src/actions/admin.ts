@@ -21,6 +21,18 @@ import type { UserRole } from '@/lib/types/roles';
 import { parseDateTimeLocalAsMexicoCity, formatShortDateTime } from '@/lib/utils/date';
 import { canRoleCreateClassType, CUSTOM_CLASS_TYPE, getClassDisplayName } from '@/lib/utils/class-type';
 import { buildEnrollmentCancellationPatch, buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
+import {
+  activateBalances,
+  adjustCreditManually,
+  decrementLegacyCredit,
+  expireOtherActiveSubscriptions,
+  grantLegacyCredit,
+  grantPackageCredits,
+  restoreEnrollmentCredit,
+} from '@/lib/subscription/credits';
+
+const SELECT_CREDIT_GROUP_ERROR = 'Selecciona el grupo de créditos.';
+import { DEFAULT_VALIDITY_DAYS } from '@/lib/subscription/package-schema';
 
 export async function cancelClassAction(classId: string): Promise<ActionResult> {
   const session = await getSession();
@@ -46,11 +58,14 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
     return { success: false, error: 'Esta clase ya está cancelada.' };
   }
 
-  // Get all pending enrollments with user subscription info
+  // Get all pending enrollments with the credit info needed to restore them
   const pendingEnrollments = await db
     .select({
       enrollmentId: classEnrollments.id,
       userSubscriptionId: classEnrollments.userSubscriptionId,
+      balanceId: classEnrollments.balanceId,
+      subscriptionActive: sql<boolean | null>`(SELECT us.active FROM user_suscriptions us WHERE us.id = ${classEnrollments.userSubscriptionId})`,
+      isOpenLab: sql<boolean | null>`(SELECT s.guest FROM user_suscriptions us JOIN suscriptions s ON s.id = us.suscription_id WHERE us.id = ${classEnrollments.userSubscriptionId})`,
     })
     .from(classEnrollments)
     .where(
@@ -73,6 +88,8 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
       )
     );
 
+  const manualRestoreSubscriptionIds: string[] = [];
+
   // Atomic: cancel class + refund all pending enrollees + update enrollment statuses
   await db.transaction(async (tx) => {
     // Set class status to 'cancelled' (Req 10.1)
@@ -81,13 +98,19 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
       .set({ status: 'cancelled' })
       .where(eq(openClasses.id, classId));
 
-    // For each pending enrollment: increment days_remaining + update status (Req 10.3)
+    // For each pending enrollment: restore its credit + update status (Req 10.3).
+    // A subscription replaced by a new package gets no automatic refund (S1): the
+    // admin restores the session on the current one (terms §5.7).
     for (const enrollment of pendingEnrollments) {
-      await tx.execute(sql`
-        UPDATE user_suscriptions
-        SET days_remaining = days_remaining + 1
-        WHERE id = ${enrollment.userSubscriptionId}
-      `);
+      const outcome = await restoreEnrollmentCredit(tx, {
+        userSubscriptionId: enrollment.userSubscriptionId,
+        balanceId: enrollment.balanceId ?? null,
+        isOpenLab: enrollment.isOpenLab === true,
+        subscriptionActive: enrollment.subscriptionActive !== false,
+      });
+      if (outcome === 'subscription_inactive') {
+        manualRestoreSubscriptionIds.push(enrollment.userSubscriptionId);
+      }
 
       await tx
         .update(classEnrollments)
@@ -109,6 +132,8 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
     }
   });
 
+  const manualRestore: { userId: string; userName: string }[] = [];
+
   // Send notification emails (non-blocking, after transaction) (Req 10.4)
   if (pendingEnrollments.length > 0) {
     // Get recipient info for emails
@@ -126,6 +151,9 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
 
         if (user) {
           recipients.push({ email: user.email, name: user.username });
+          if (manualRestoreSubscriptionIds.includes(enrollment.userSubscriptionId)) {
+            manualRestore.push({ userId: user.id, userName: user.username });
+          }
         }
       }
     }
@@ -155,6 +183,15 @@ export async function cancelClassAction(classId: string): Promise<ActionResult> 
 
   revalidatePath('/admin/classes');
   revalidatePath('/');
+  if (manualRestore.length > 0) {
+    return {
+      success: true,
+      message: `Clase cancelada. Créditos restaurados. Repón la sesión manualmente a: ${manualRestore
+        .map((u) => u.userName)
+        .join(', ')} (su suscripción ya no está vigente).`,
+      data: { manualRestore },
+    };
+  }
   return { success: true, message: 'Clase cancelada. Créditos restaurados a los alumnos.' };
 }
 
@@ -199,6 +236,7 @@ export async function confirmPaymentAction(
   });
 
   const sessionsToAdd = sub?.sessions ?? 0;
+  let replacedCount = 0;
 
   // Atomic transaction (Req 9.3): if any step fails, all changes rollback
   await db.transaction(async (tx) => {
@@ -215,17 +253,27 @@ export async function confirmPaymentAction(
       .where(eq(userSubscriptions.paymentId, paymentId));
 
     // 9.6: Accumulate days_remaining += sessions (not reset)
-    // 9.7: Set expiration_date = NOW() + 30 days
-    await tx.execute(sql`
-      UPDATE user_suscriptions
-      SET days_remaining = days_remaining + ${sessionsToAdd},
-          expiration_date = NOW() + INTERVAL '30 days'
-      WHERE payment_id = ${paymentId}
-    `);
+    // 9.7 / D3: expiration_date = NOW() + the package's validity copied at purchase (30 if legacy)
+    await grantPackageCredits(tx, paymentId, sessionsToAdd);
+
+    // Special packages: every credit group starts full.
+    if (sub?.kind === 'special') {
+      await activateBalances(tx, userSub.id);
+    }
+
+    // D2 / S3: one active subscription per user — the previous one expires now.
+    replacedCount = (await expireOtherActiveSubscriptions(tx, userSub.userId, userSub.id)).length;
   });
 
   revalidatePath('/admin/payments');
-  return { success: true, message: 'Pago confirmado exitosamente.' };
+  revalidatePath('/admin/subscriptions');
+  return {
+    success: true,
+    message:
+      replacedCount > 0
+        ? 'Pago confirmado exitosamente. La suscripción anterior del cliente quedó vencida.'
+        : 'Pago confirmado exitosamente.',
+  };
 }
 
 
@@ -302,6 +350,7 @@ export async function suspendSubscriptionAction(
   const futureEnrollments = await db
     .select({
       enrollmentId: classEnrollments.id,
+      balanceId: classEnrollments.balanceId,
     })
     .from(classEnrollments)
     .innerJoin(openClasses, eq(classEnrollments.openClassId, openClasses.id))
@@ -328,14 +377,13 @@ export async function suspendSubscriptionAction(
         .set(buildEnrollmentCancellationPatch('cancelled'))
         .where(eq(classEnrollments.id, enrollment.enrollmentId));
 
-      // Open Lab has no per-session credits to restore.
-      if (!isOpenLab) {
-        await tx.execute(sql`
-          UPDATE user_suscriptions
-          SET days_remaining = days_remaining + 1
-          WHERE id = ${subscriptionId}
-        `);
-      }
+      // Back to its group (special) or the total; Open Lab has no credits to restore.
+      await restoreEnrollmentCredit(tx, {
+        userSubscriptionId: subscriptionId,
+        balanceId: enrollment.balanceId ?? null,
+        isOpenLab,
+        subscriptionActive: true,
+      });
     }
   });
 
@@ -344,7 +392,8 @@ export async function suspendSubscriptionAction(
 }
 
 export async function refundSessionCreditAction(
-  userId: string
+  userId: string,
+  balanceId?: string
 ): Promise<ActionResult> {
   const session = await getSession();
   if (!session || session.role !== 'admin') {
@@ -371,12 +420,24 @@ export async function refundSessionCreditAction(
     };
   }
 
-  // Increment days_remaining by 1
-  await db.execute(sql`
-    UPDATE user_suscriptions
-    SET days_remaining = days_remaining + 1
-    WHERE id = ${activeSub.id}
-  `);
+  // Special packages: the admin chooses the credit group (D5).
+  const plan = await db.query.subscriptions.findFirst({
+    where: eq(subscriptions.id, activeSub.subscriptionId),
+  });
+  if (plan?.kind === 'special') {
+    if (!balanceId) {
+      return { success: false, error: SELECT_CREDIT_GROUP_ERROR, field: 'balanceId' };
+    }
+    const adjusted = await db.transaction((tx) =>
+      adjustCreditManually(tx, { userSubscriptionId: activeSub.id, balanceId, delta: 1 })
+    );
+    if (!adjusted.ok) {
+      return { success: false, error: adjusted.error, field: 'balanceId' };
+    }
+  } else {
+    // Increment days_remaining by 1
+    await grantLegacyCredit(db, activeSub.id);
+  }
 
   revalidatePath('/admin/subscriptions');
   return { success: true, message: 'Crédito de sesión otorgado.' };
@@ -392,7 +453,8 @@ export async function refundSessionCreditAction(
  * El decremento ocurre en una transacción con guard atómico `days_remaining > 0`.
  */
 export async function decrementSubscriptionCreditAction(
-  subscriptionId: string
+  subscriptionId: string,
+  balanceId?: string
 ): Promise<ActionResult> {
   const session = await getSession();
   if (!session || session.role !== 'admin') {
@@ -427,26 +489,27 @@ export async function decrementSubscriptionCreditAction(
     return { success: false, error: 'La suscripción no tiene créditos disponibles.' };
   }
 
+  const isSpecial = plan?.kind === 'special';
+  if (isSpecial && !balanceId) {
+    return { success: false, error: SELECT_CREDIT_GROUP_ERROR, field: 'balanceId' };
+  }
+
   let newCredits: number;
   try {
     newCredits = await db.transaction(async (tx) => {
-      // Decremento atómico con guard: sólo resta si aún hay créditos.
-      const [updated] = await tx
-        .update(userSubscriptions)
-        .set({ daysRemaining: sql`days_remaining - 1` })
-        .where(
-          and(
-            eq(userSubscriptions.id, subscriptionId),
-            gt(userSubscriptions.daysRemaining, 0)
-          )
-        )
-        .returning({ daysRemaining: userSubscriptions.daysRemaining });
-
-      if (!updated) {
-        throw new Error('La suscripción no tiene créditos disponibles.');
+      // Decremento atómico con guard: sólo resta si aún hay créditos (del grupo elegido en especiales).
+      let remaining: number;
+      if (isSpecial && balanceId) {
+        const adjusted = await adjustCreditManually(tx, { userSubscriptionId: subscriptionId, balanceId, delta: -1 });
+        if (!adjusted.ok) throw new Error(adjusted.error);
+        remaining = adjusted.daysRemaining;
+      } else {
+        const updated = await decrementLegacyCredit(tx, subscriptionId);
+        if (updated === null) {
+          throw new Error('La suscripción no tiene créditos disponibles.');
+        }
+        remaining = updated;
       }
-
-      const remaining = updated.daysRemaining ?? 0;
 
       // Último crédito consumido → vencida (NUNCA suspendida).
       if (remaining === 0) {
@@ -517,13 +580,15 @@ export async function reactivateSubscriptionAction(
     };
   }
 
-  // Reactivate: set active=true and extend expiration by 30 days from now
+  // Reactivate: set active=true and extend expiration by the validity copied at purchase
+  // (30 days for subscriptions bought before special packages).
+  const validityDays = userSub.validityDaysSnapshot ?? DEFAULT_VALIDITY_DAYS;
   await db
     .update(userSubscriptions)
     .set({
       active: true,
       status: 'active',
-      expirationDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      expirationDate: new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000),
     })
     .where(eq(userSubscriptions.id, subscriptionId));
 

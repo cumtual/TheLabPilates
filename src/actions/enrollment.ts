@@ -3,7 +3,15 @@
 import { eq, and, sql, notInArray, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
-import { classEnrollments, openClasses, userSubscriptions, payments, subscriptions, guestEnrollments } from '@/db/schema';
+import {
+  classEnrollments,
+  openClasses,
+  userSubscriptions,
+  payments,
+  subscriptions,
+  guestEnrollments,
+  userSubscriptionBalances,
+} from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import { isWithinGracePeriod } from '@/lib/utils/date';
@@ -13,8 +21,11 @@ import {
   buildEnrollmentCancellationPatch,
 } from '@/lib/enrollment/cancellation';
 import type { ActionResult } from '@/lib/types';
+import type { BookingRejectionCode, EnrollmentActionResult } from '@/lib/types/actions';
+import { BookingRejectionError, consumeClassCredit, restoreEnrollmentCredit } from '@/lib/subscription/credits';
+import { explainRejection } from '@/lib/subscription/rules';
 
-export async function enrollInClassAction(classId: string): Promise<ActionResult> {
+export async function enrollInClassAction(classId: string): Promise<EnrollmentActionResult> {
   const session = await getSession();
   if (!session) {
     return { success: false, error: 'No autenticado.' };
@@ -44,9 +55,15 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       )
     );
 
-  // Find a usable subscription: confirmed payment, not expired, has credits (or is Open Lab)
+  // Find a usable subscription: confirmed payment, not expired, has credits (or is Open Lab).
+  // D2 leaves at most one active; with legacy duplicates, the one that expires first wins.
   const now = new Date();
-  const activeSub = userSubs.find((row) => {
+  const byExpiration = [...userSubs].sort(
+    (a, b) =>
+      (a.userSub.expirationDate ? new Date(a.userSub.expirationDate).getTime() : Infinity) -
+      (b.userSub.expirationDate ? new Date(b.userSub.expirationDate).getTime() : Infinity)
+  );
+  const activeSub = byExpiration.find((row) => {
     if (!row.payment?.confirmed) return false;
     if (row.userSub.expirationDate && new Date(row.userSub.expirationDate) < now) return false;
     // Open Lab (guest = true) doesn't use days_remaining — unlimited classes
@@ -74,6 +91,8 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
 
   const userSub = activeSub.userSub;
   const isOpenLab = activeSub.subscription?.guest === true;
+  const packageKind = activeSub.subscription?.kind ?? 'standard';
+  const packageName = activeSub.subscription?.name ?? 'paquete';
 
   // 2. Get the class and validate
   const openClass = await db.query.openClasses.findFirst({
@@ -90,6 +109,23 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
 
   if (openClass.classDate && new Date(openClass.classDate) < new Date()) {
     return { success: false, error: 'Esta clase ya pasó.' };
+  }
+
+  // Special packages: discipline / time-window check with the exact reason (SPEC §5.3 step 4).
+  // It is re-checked under the lock inside the transaction.
+  if (packageKind === 'special' && openClass.classDate) {
+    const balances = await db
+      .select()
+      .from(userSubscriptionBalances)
+      .where(eq(userSubscriptionBalances.userSubscriptionId, userSub.id));
+    const rejection = explainRejection(
+      balances,
+      { classType: openClass.classType, classDate: openClass.classDate },
+      packageName
+    );
+    if (rejection) {
+      return { success: false, error: rejection.message, code: rejection.code };
+    }
   }
 
   // 3. Check capacity (count active enrollments + guest enrollments)
@@ -119,7 +155,10 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
   // 5. Atomic transaction with row lock: re-verify capacity + duplicate INSIDE the
   //    transaction so concurrent enrollments cannot overbook the class (CWE-362).
   let txError: string | null = null;
+  let txCode: BookingRejectionCode | undefined;
+  let balanceId: string | null = null;
 
+  try {
   await db.transaction(async (tx) => {
     // Lock the class row — serializes concurrent enrollments for this class.
     await tx.execute(sql`SELECT id FROM open_class WHERE id = ${classId} FOR UPDATE`);
@@ -149,6 +188,21 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
       tx.rollback();
     }
 
+    // Credit: total (standard), group + total under the subscription lock (special), or none (Open Lab).
+    try {
+      balanceId = await consumeClassCredit(
+        tx,
+        { userSubscriptionId: userSub.id, kind: packageKind, isOpenLab, packageName },
+        { classType: openClass.classType, classDate: openClass.classDate ?? new Date() }
+      );
+    } catch (error) {
+      if (!(error instanceof BookingRejectionError)) throw error;
+      txError = error.message;
+      txCode = error.rejection.code;
+      tx.rollback();
+      return;
+    }
+
     // A cancellation keeps its row (admin audit), and uk_class_user_enrollment
     // (open_class_id, user_suscription_id) would reject a second INSERT: reactivate
     // the cancelled row instead. created_at restarts so the 10-min grace window
@@ -161,6 +215,7 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
         cancelledAt: null,
         checkedInAt: null,
         checkinToken: generateCheckinToken(),
+        balanceId,
       })
       .where(
         and(
@@ -177,21 +232,17 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
         userSubscriptionId: userSub.id,
         status: 'pending',
         checkinToken: generateCheckinToken(),
+        ...(balanceId ? { balanceId } : {}),
       });
     }
-
-    // Open Lab memberships don't use days_remaining — unlimited classes
-    if (!isOpenLab) {
-      await tx.execute(sql`
-        UPDATE user_suscriptions
-        SET days_remaining = days_remaining - 1
-        WHERE id = ${userSub.id} AND days_remaining > 0
-      `);
-    }
   });
+  } catch (error) {
+    // tx.rollback() surfaces as an error: report the reason we recorded.
+    if (!txError) throw error;
+  }
 
   if (txError) {
-    return { success: false, error: txError };
+    return txCode ? { success: false, error: txError, code: txCode } : { success: false, error: txError };
   }
 
   revalidatePath('/client');
@@ -199,7 +250,9 @@ export async function enrollInClassAction(classId: string): Promise<ActionResult
   revalidatePath('/client/reservations');
   revalidatePath('/client/subscription');
   revalidatePath('/');
-  return { success: true, message: '¡Reservación confirmada!' };
+  return balanceId
+    ? { success: true, message: '¡Reservación confirmada!', data: { balanceId } }
+    : { success: true, message: '¡Reservación confirmada!' };
 }
 
 
@@ -213,7 +266,11 @@ async function isOpenLabEnrollment(userSubscriptionId: string): Promise<boolean>
   return subRow?.guest === true;
 }
 
-type RefundOutcome = 'refunded' | 'not_pending' | 'error';
+type RefundOutcome = 'refunded' | 'not_refunded_inactive' | 'not_pending' | 'error';
+
+/** S1: la suscripción con la que se reservó fue reemplazada o venció. */
+const CREDIT_NOT_RESTORED_MESSAGE =
+  'Reserva cancelada. El crédito no se reintegra porque la suscripción con la que reservaste ya no está vigente.';
 
 /**
  * Timely / grace cancellation: soft-cancel (the row is kept for the admin audit,
@@ -224,7 +281,8 @@ type RefundOutcome = 'refunded' | 'not_pending' | 'error';
 async function refundEnrollment(
   enrollmentId: string,
   userSubscriptionId: string,
-  isOpenLab: boolean
+  isOpenLab: boolean,
+  credit: { balanceId: string | null; subscriptionActive: boolean }
 ): Promise<RefundOutcome> {
   try {
     return await db.transaction(async (tx) => {
@@ -236,15 +294,14 @@ async function refundEnrollment(
 
       if (cancelled.length === 0) return 'not_pending';
 
-      // Open Lab memberships don't use days_remaining — skip increment
-      if (!isOpenLab) {
-        await tx.execute(sql`
-          UPDATE user_suscriptions
-          SET days_remaining = days_remaining + 1
-          WHERE id = ${userSubscriptionId}
-        `);
-      }
-      return 'refunded';
+      // Back to its group (special) or to the total; Open Lab has no credits to restore.
+      const restored = await restoreEnrollmentCredit(tx, {
+        userSubscriptionId,
+        balanceId: credit.balanceId,
+        isOpenLab,
+        subscriptionActive: credit.subscriptionActive,
+      });
+      return restored === 'subscription_inactive' ? 'not_refunded_inactive' : 'refunded';
     });
   } catch {
     return 'error';
@@ -341,11 +398,17 @@ export async function cancelReservationAction(enrollmentId: string): Promise<Act
 
   if (hoursUntilClass >= 24 || withinGrace) {
     // Timely or grace cancellation: soft-cancel (audit) + refund credit (atomic)
-    const outcome = await refundEnrollment(
-      enrollmentId,
-      enrollment.userSubscriptionId,
-      isOpenLab
-    );
+    const outcome = await refundEnrollment(enrollmentId, enrollment.userSubscriptionId, isOpenLab, {
+      balanceId: enrollment.balanceId ?? null,
+      subscriptionActive: enrollmentRow.userSubscription.active === true,
+    });
+
+    if (outcome === 'not_refunded_inactive') {
+      revalidatePath('/client/reservations');
+      revalidatePath('/client');
+      revalidatePath('/');
+      return { success: true, message: CREDIT_NOT_RESTORED_MESSAGE };
+    }
 
     if (outcome !== 'refunded') {
       return {
@@ -428,11 +491,17 @@ export async function confirmLateCancellationAction(enrollmentId: string): Promi
 
   if (hoursUntilClass >= 24 || isWithinGracePeriod(enrollment.createdAt)) {
     const isOpenLab = await isOpenLabEnrollment(enrollment.userSubscriptionId);
-    const outcome = await refundEnrollment(
-      enrollmentId,
-      enrollment.userSubscriptionId,
-      isOpenLab
-    );
+    const outcome = await refundEnrollment(enrollmentId, enrollment.userSubscriptionId, isOpenLab, {
+      balanceId: enrollment.balanceId ?? null,
+      subscriptionActive: enrollmentRow.userSubscription.active === true,
+    });
+
+    if (outcome === 'not_refunded_inactive') {
+      revalidatePath('/client/reservations');
+      revalidatePath('/client');
+      revalidatePath('/');
+      return { success: true, message: CREDIT_NOT_RESTORED_MESSAGE };
+    }
 
     if (outcome !== 'refunded') {
       return {

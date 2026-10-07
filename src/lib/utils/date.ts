@@ -304,3 +304,33 @@ export function formatAuditDateTime(date: Date | string | null | undefined): str
 
   return `${parts.day}/${parts.month}/${parts.year}, ${parts.hour}:${parts.minute} ${parts.dayPeriod.toUpperCase()}`;
 }
+
+const minutesOfDayFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: TIMEZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** Minutos desde la medianoche CDMX (0–1439). Base de las franjas horarias de paquetes. */
+export function getMexicoCityMinutesOfDay(date: Date | string): number {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) throw new Error('Fecha inválida');
+  const parts = Object.fromEntries(
+    minutesOfDayFormatter.formatToParts(d).map((p) => [p.type, p.value])
+  ) as Record<Intl.DateTimeFormatPartTypes, string>;
+  return Number(parts.hour) * 60 + Number(parts.minute);
+}
+
+/** `'07:00'` o `'07:00:00'` (columna `time`) → 420. */
+export function hhmmToMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/** 420 → `'07:00'`. */
+export function minutesToHHMM(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}

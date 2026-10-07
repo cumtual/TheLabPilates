@@ -1,3 +1,370 @@
+# TASK-SP — Paquetes especiales y catálogo de suscripciones
+
+**Estado:** ✅ Ejecutado (2026-10-07). Suite 951/951 (128 archivos, +188 tests), `tsc` limpio, `next build` compila (el prerender de `/` espera los scripts SQL), lint 60 problemas (base: 61, ninguno nuevo). **Pendiente (usuario):** TASK-SP-DB-04, revisión legal y E2E manual de TASK-SP-VERIFY-01. Ajustes al diseño: SPEC §13.
+**Especificación:** `SPEC-SPECIAL-PACKAGES.md` v2 (decisiones D1–D7 en §0.1 y S1–S3 en §0.2, todas confirmadas).
+**Rama:** `feat/special-packages`, desde `feat/sculpt-class` (commit `24d937e`).
+**Runner:** Vitest. `pnpm test <ruta>` equivale a `vitest run <ruta>`.
+**Ciclo por tarea:** 🔴 escribir los tests y verlos fallar por la razón correcta → 🟢 el código mínimo para que pasen → 🔵 refactor con la suite en verde. Una tarea no empieza hasta que la anterior está en verde. Mismas reglas que la sección TASK-QR (abajo).
+**Restricción de BD:** ninguna tarea ejecuta comandos contra la BD. `TASK-SP-DB-04` la ejecuta el usuario.
+**Tiempo de los tests:** `vi.useFakeTimers()` y `vi.setSystemTime(new Date('2026-10-07T10:00:00.000-06:00'))` en todo test que dependa de la hora.
+
+## Matriz de trazabilidad
+
+| Requisito | Tareas | Tests |
+|---|---|---|
+| Validación de disciplina | DOM-02, BE-02 | `rules.test.ts`, `enrollment-special-package.test.ts` |
+| Franja horaria CDMX (D1) | DOM-01, DOM-02, BE-02 | `date-minutes-of-day.test.ts`, `rules.test.ts` |
+| «1 de [Mat \| Barre]» excluyente | DOM-02, BE-02 | `rules.test.ts`, `enrollment-special-package.test.ts` (traza Reset Pass) |
+| Bloqueo de clase duplicada en paquete combinado | BE-02 | `enrollment-special-package.test.ts` |
+| Concurrencia y atomicidad | BE-01, BE-02, BE-03 | `credits.test.ts`, `enrollment-special-package.test.ts` |
+| Expiración dinámica (D3) | BE-05 | `confirm-payment-validity.test.ts` |
+| Una sola suscripción activa (D2, S3) | BE-05, CLI-02 | `confirm-payment-validity.test.ts`, `ActiveSubscriptionWarning.test.tsx` |
+| Copia al comprar (D4) | BE-04, BE-09 | `purchase-snapshot.test.ts`, `admin-packages.test.ts` |
+| Ajuste manual por grupo (D5) | BE-06, ADM-05 | `admin-credit-adjust.test.ts` |
+| Pases de invitado (D6) | BE-07 | `guest-allowance.test.ts`, `guest-special-package.test.ts` |
+| Catálogo en BD y compatibilidad (D7) | DB-02, LND-01, LND-02 | `catalog-compat-backfill.test.ts`, `PackageCard.test.tsx`, `Pricing.test.tsx` |
+| Descripción < 50 y máximo 4 beneficios | DOM-03, DB-01, ADM-03 | `package-schema.test.ts`, `special-packages-migration.test.ts`, `PackageForm.test.tsx` |
+| Un solo escritor de créditos (INV-3) | BE-08 | `credit-writers.test.ts` |
+
+---
+
+## Fase 0 · Preparación
+
+### TASK-SP-SETUP-01 · Zod como dependencia directa
+- **Archivos:** `package.json`, `pnpm-lock.yaml`
+- **Descripción:** `pnpm add zod@4.4.3`. Es la versión que ya está en el lockfile como dependencia indirecta, así que no descarga nada nuevo.
+- **Test 🔴:** `src/__tests__/dependencies.test.ts` verifica que `package.json` declare `zod` en `dependencies` y que `import { z } from 'zod'` resuelva a la versión 4.
+- **Verificar:** `pnpm test src/__tests__/dependencies.test.ts`
+
+---
+
+## Fase 1 · Base de datos y migración segura
+
+### TASK-SP-DB-01 · DDL aditivo
+- **Archivos:** `sql/manual/2026-10-07_001_special_packages.sql`, `src/db/__tests__/special-packages-migration.test.ts`
+- **Descripción:** el script de SPEC §3.1, tal cual.
+- **Tests 🔴** (ignorando las líneas de comentario):
+  1. Cada columna nueva usa `ADD COLUMN IF NOT EXISTS`; cada tabla `CREATE TABLE IF NOT EXISTS`; cada índice `CREATE INDEX IF NOT EXISTS`.
+  2. Cada `ADD CONSTRAINT` está dentro de un `IF NOT EXISTS (SELECT 1 FROM pg_constraint …)`.
+  3. Hay `BEGIN;`, `SET LOCAL lock_timeout` y `COMMIT;`.
+  4. No contiene `DROP`, `TRUNCATE`, `DELETE`, `UPDATE`, `INSERT`, `ALTER TYPE`, `RENAME` ni `SET NOT NULL`.
+  5. Contiene `cardinality(features) <= 4`, `short_description varchar(49)` y `kind <> 'special' OR guest IS NOT TRUE`.
+  6. Toda columna nueva de `user_suscriptions` y `class_enrolleds` es `NULL` y sin `DEFAULT`.
+- **Verificar:** `pnpm test src/db/__tests__/special-packages-migration.test.ts`
+
+### TASK-SP-DB-02 · Script de compatibilidad y carga del catálogo (D7)
+- **Archivos:** `sql/manual/2026-10-07_002_catalog_compat_backfill.sql`, `src/db/__tests__/catalog-compat-backfill.test.ts`, `src/db/__tests__/fixtures/pricing-legacy.ts` (copia de los datos actuales de `Pricing.tsx`, antes de borrarlos)
+- **Descripción:** el script de SPEC §3.3 con sus consultas previas y de verificación comentadas.
+- **Tests 🔴:**
+  1. Cada `UPDATE` incluye `AND short_description IS NULL`.
+  2. El único `INSERT` es el alta de paquetes de la landing (S2) y está protegido con `WHERE NOT EXISTS (… s.name = v.name)`; sus valores (`name`, `sessions`, `guest`, `price`) coinciden con el fixture.
+  3. No contiene `DELETE`, `DROP` ni `TRUNCATE`, y ningún `UPDATE` cambia `sessions`, `guest` ni `price`.
+  4. Ninguna sentencia toca `user_suscriptions` ni `class_enrolleds`: los snapshots en `NULL` son lo que mantiene el comportamiento actual.
+  5. Los textos de cada paquete coinciden con el fixture (`tagline` → `short_description`, `features`, `premium` → `is_featured`).
+  6. Cada descripción tiene ≤ 49 caracteres, cada arreglo ≤ 4 elementos y cada beneficio ≤ 24, validado con `packageInputSchema` de DOM-03.
+- **Verificar:** `pnpm test src/db/__tests__/catalog-compat-backfill.test.ts`
+
+### TASK-SP-DB-03 · Esquema Drizzle
+- **Archivos:** `src/db/schema.ts`, `src/db/relations.ts`, `src/db/__tests__/schema-special-packages.test.ts`
+- **Descripción:** espejo exacto de SPEC §3.2.
+- **Tests 🔴:**
+  1. `getTableColumns(subscriptions)` tiene las 10 columnas nuevas con su nombre SQL, `notNull` y default.
+  2. `subscriptionRules.allowedClassTypes` y `userSubscriptionBalances.allowedClassTypes` son arreglos del enum `class_type`.
+  3. `priceSnapshot`, `validityDaysSnapshot`, `guestCreditsSnapshot` y `classEnrollments.balanceId` son nullable y sin default.
+  4. Las columnas del esquema coinciden con las del script 001: se extraen los nombres del SQL y se comparan.
+- **Verificar:** `pnpm test src/db/__tests__/schema-special-packages.test.ts && npx tsc --noEmit`
+
+### TASK-SP-DB-04 · Ejecución en producción (USUARIO)
+1. Consultas de solo lectura de SPEC §3.3: nombres y precios del catálogo, y usuarios con más de una suscripción activa.
+2. Script 001, después 002 y después su verificación. Los dos se pueden repetir sin efecto.
+3. Deploy, solo después de lo anterior (SPEC §3.4).
+
+---
+
+## Fase 2 · Backend y lógica de negocio
+
+### TASK-SP-DOM-01 · Hora del día en CDMX
+- **Archivos:** `src/lib/utils/date.ts` (`getMexicoCityMinutesOfDay`), `src/lib/utils/__tests__/date-minutes-of-day.test.ts`
+- **Tests 🔴:**
+  1. `2026-10-07T13:00:00Z` → 420 (07:00 CDMX).
+  2. `2026-10-07T17:00:00Z` → 660 (11:00).
+  3. `2026-10-08T05:59:00Z` → 1439 (23:59 del día 7 en CDMX).
+  4. No depende de la zona del servidor: el resultado es el mismo con `process.env.TZ` igual a `UTC` y a `Asia/Tokyo`.
+- **Verificar:** `pnpm test src/lib/utils/__tests__/date-minutes-of-day.test.ts`
+
+### TASK-SP-DOM-02 · Reglas puras de disciplina y franja
+- **Archivos:** `src/lib/subscription/rules.ts`, `src/lib/subscription/__tests__/rules.test.ts`
+- **Descripción:** las funciones de SPEC §5.2 y `explainRejection` de §5.4.
+- **Tests 🔴:**
+  1. **Disciplina:** un balance de `[yoga]` no sirve para `barre`; uno de `[mat_pilates, barre]` sirve para las dos.
+  2. **Franja (D1):** con 07:00–11:00, las clases de 07:00 y 11:00 entran; las de 06:59 y 11:01 no. Sin franja entra cualquier hora.
+  3. **Excluyente:** con A=1×[yoga] y B=1×[mat_pilates, barre], Mat elige B. Con B en 0, Barre y Mat → `null`, y Yoga → A.
+  4. **Más restrictivo:** con A=1×[yoga] y C=1×[yoga, barre], Yoga elige A. Entre dos grupos de `[yoga]`, el que tiene franja va primero.
+  5. **Propiedad (fast-check):** sobre balances y clases arbitrarios, si `pickBalanceForClass` devuelve un grupo, ese grupo es utilizable; si devuelve `null`, ninguno lo es.
+  6. **Propiedad:** el resultado es igual con cualquier permutación de los balances.
+  7. `explainRejection` devuelve cada código de §5.4 con su mensaje exacto, y respeta el orden de prioridad (un caso por cada combinación).
+  8. `describeBalance`: «1 clase de Yoga», «2 clases de Mat Pilates / Barre», y respeta `label` si existe.
+- **Verificar:** `pnpm test src/lib/subscription/__tests__/rules.test.ts`
+
+### TASK-SP-DOM-03 · Esquema Zod del paquete
+- **Archivos:** `src/lib/subscription/package-schema.ts`, `src/lib/subscription/__tests__/package-schema.test.ts`
+- **Descripción:** el esquema de SPEC §4.1.
+- **Tests 🔴** (cada límite con su caso válido y el inválido justo afuera):
+  1. Descripción de 49 caracteres → válida; de 50 → error «La descripción debe tener menos de 50 caracteres.»; vacía o solo espacios → error.
+  2. 4 beneficios → válido; 5 → «Máximo 4 beneficios.»; un beneficio de 25 caracteres → error; «Yoga» y «yoga» → «No repitas beneficios.»
+  3. Vigencia: 2 semanas → 14 días; 365 días → válida; 53 semanas → error.
+  4. `special` sin reglas → error; 7 reglas → error; disciplina repetida → error; disciplina fuera de `CLASS_TYPES` → error.
+  5. Franja `11:00–07:00` → error en `rules.0.timeWindow.end`; `7:00` → error de formato.
+  6. `guestCredits` 11 → error.
+  7. `standard` exige `sessions`; `special` no lo acepta como entrada.
+  8. La ruta de cada error se convierte en la clave esperada de `fieldErrors` (helper `toFieldErrors(zodError)`).
+- **Verificar:** `pnpm test src/lib/subscription/__tests__/package-schema.test.ts`
+
+### TASK-SP-BE-01 · Módulo de créditos (transaccional)
+- **Archivos:** `src/lib/subscription/credits.ts`, `src/lib/subscription/__tests__/credits.test.ts`
+- **Descripción:** las funciones de SPEC §5.5. Las consultas se verifican con `new PgDialect().sqlToQuery(...)`.
+- **Tests 🔴:**
+  1. `consumeClassCredit` en un especial: bloquea `user_suscriptions` con `FOR UPDATE` **antes** de leer los balances (INV-5), y emite los dos UPDATE con las guardas `credits_remaining > 0` y `days_remaining > 0`.
+  2. Si cualquiera de los dos UPDATE devuelve 0 filas, lanza `BookingRejection` y no sigue escribiendo.
+  3. Open Lab no escribe nada; `standard` solo hace `days_remaining - 1`.
+  4. `restoreEnrollmentCredit`: con `balance_id`, `+1` a los dos con la guarda `credits_remaining < credits_total`. Sin `balance_id` en Open Lab, nada (H14). Con la suscripción inactiva, devuelve `'subscription_inactive'` sin escribir (S1).
+  5. `snapshotPackage` copia precio, `validity_days ?? 30` y `guest_credits`, e inserta un balance por regla con `credits_remaining = 0`.
+  6. `activateBalances` deja `credits_remaining = credits_total`.
+  7. `expireOtherActiveSubscriptions` excluye `keepId` y pone en 0 los grupos de las demás.
+  8. **Propiedad (fast-check, modelo en memoria):** en cualquier secuencia de consumos y reintegros, `days_remaining === Σ credits_remaining` y ningún saldo baja de 0 ni supera el total (INV-1).
+- **Verificar:** `pnpm test src/lib/subscription/__tests__/credits.test.ts`
+
+### TASK-SP-BE-02 · Motor de reserva por disciplina
+- **Archivos:** `src/actions/enrollment.ts`, `src/lib/types/actions.ts` (`EnrollmentActionResult`, `BookingRejectionCode`), `src/actions/__tests__/enrollment-special-package.test.ts`; se ajustan los mocks de `enrollment*.test.ts`.
+- **Descripción:** el algoritmo de SPEC §5.3.
+- **Tests 🔴:**
+  1. **Traza del Reset Pass:** los 6 pasos de la tabla de SPEC §5.3, con su `code`, su mensaje y el `balance_id` guardado.
+  2. **Disciplina:** una clase de Sculpt con un paquete sin Sculpt → `CLASS_TYPE_NOT_INCLUDED` y ningún INSERT.
+  3. **Franja:** Yoga a las 11:00 con franja 07:00–11:00 → reservada; a las 11:01 → `OUTSIDE_TIME_WINDOW`.
+  4. **Clase duplicada en paquete combinado:** con el grupo B de 2 créditos, reservar la **misma** clase de Mat dos veces → la segunda da `ALREADY_ENROLLED` y el saldo de B baja una sola vez.
+  5. **Concurrencia:** se simula que, bajo el bloqueo, la relectura de los balances devuelve B en 0 (otra pestaña ganó la carrera) → rollback con `GROUP_EXHAUSTED`, sin INSERT y sin decrementos.
+  6. **Atomicidad:** si el UPDATE de `days_remaining` devuelve 0 filas → rollback, sin INSERT de la reserva.
+  7. Reactivar una fila cancelada también guarda `balance_id`.
+  8. **Regresión:** los tests actuales de `enrollment*.test.ts` para `standard` y Open Lab pasan sin cambiar sus expectativas.
+- **Verificar:** `pnpm test src/actions/__tests__/enrollment*.test.ts`
+
+### TASK-SP-BE-03 · Reembolsos automáticos por grupo
+- **Archivos:** `src/actions/enrollment.ts` (`refundEnrollment`), `src/actions/admin.ts` (`cancelClassAction`, `suspendSubscriptionAction`), `src/actions/__tests__/special-package-refunds.test.ts`
+- **Tests 🔴:**
+  1. Una cancelación a tiempo (más de 24 h, o dentro de los 10 min de gracia) devuelve el crédito al grupo de `balance_id`.
+  2. Una cancelación tardía no devuelve nada (`late_cancelled`).
+  3. Dos cancelaciones concurrentes de la misma reserva reintegran una sola vez (la guarda `status='pending'` ya existe).
+  4. Cancelar la clase devuelve a cada alumno su grupo; en Open Lab no toca `days_remaining` (H14).
+  5. **S1:** si la suscripción fue reemplazada, la cancelación del cliente (a tiempo o tardía) se hace sin reintegro y con el mensaje acordado.
+  6. **S1, excepción:** si el Estudio cancela la clase, esas reservas se cancelan sin reintegro automático y `data.manualRestore` lista a esos alumnos; las de suscripciones vigentes se reintegran normal.
+  7. **Regresión:** `enrollment-cancellation.test.ts`, `grace-period-cancellation.test.ts` y `admin-class.test.ts` siguen en verde.
+- **Verificar:** `pnpm test src/actions/__tests__/special-package-refunds.test.ts src/actions/__tests__/enrollment-cancellation.test.ts src/actions/__tests__/admin-class.test.ts`
+
+### TASK-SP-BE-04 · Compra con copia (D4)
+- **Archivos:** `src/actions/subscription.ts`, `src/actions/__tests__/purchase-snapshot.test.ts`
+- **Tests 🔴:**
+  1. Un paquete inexistente, inactivo o borrado → «Este paquete ya no está disponible.» y nada insertado (H9).
+  2. La compra guarda `price_snapshot`, `validity_days_snapshot` (30 si es `NULL`) y `guest_credits_snapshot` en la misma transacción que el pago.
+  3. Un especial inserta un balance por regla con `credits_remaining = 0`.
+  4. La suscripción activa del usuario no cambia (S3).
+  5. **Regresión:** se mantienen el bloqueo por pago pendiente y la expiración de suspendidas.
+- **Verificar:** `pnpm test src/actions/__tests__/purchase-snapshot.test.ts src/actions/__tests__/subscription*.test.ts`
+
+### TASK-SP-BE-05 · Expiración dinámica y suscripción única (D2, D3)
+- **Archivos:** `src/actions/admin.ts` (`confirmPaymentAction`, `reactivateSubscriptionAction`), `src/actions/__tests__/confirm-payment-validity.test.ts`
+- **Tests 🔴:**
+  1. Con `validity_days_snapshot = 14` aprobado el 2026-10-07 a las 10:00 CDMX, `expiration_date` = `NOW() + make_interval(days => 14)`, verificado en el SQL con `sqlToQuery`.
+  2. Con el snapshot `NULL` (suscripción anterior), el SQL usa `COALESCE(…, 30)`.
+  3. Un especial activa sus balances en la misma transacción.
+  4. Otra suscripción activa del mismo usuario queda `expired`, con `active=false` y `days_remaining=0`; la nueva queda activa (D2, S3).
+  5. Si la transacción falla, la suscripción anterior sigue activa.
+  6. La reactivación usa la vigencia copiada.
+- **Verificar:** `pnpm test src/actions/__tests__/confirm-payment-validity.test.ts src/actions/__tests__/admin*.test.ts`
+
+### TASK-SP-BE-06 · Ajustes manuales por grupo (D5)
+- **Archivos:** `src/actions/admin.ts` (`refundSessionCreditAction`, `decrementSubscriptionCreditAction`), `src/actions/__tests__/admin-credit-adjust.test.ts`
+- **Tests 🔴:**
+  1. En un especial sin `balanceId` → «Selecciona el grupo de créditos.» con `field: 'balanceId'`.
+  2. Un `balanceId` de otra suscripción → error y nada escrito.
+  3. +1 y −1 ajustan el grupo y Σ juntos; −1 hasta llegar a 0 en total expira la suscripción.
+  4. +1 sobre un grupo lleno → error «Ese grupo ya tiene todos sus créditos.»
+  5. **Regresión:** en `standard` el comportamiento no cambia.
+- **Verificar:** `pnpm test src/actions/__tests__/admin-credit-adjust.test.ts`
+
+### TASK-SP-BE-07 · Pases de invitado (D6)
+- **Archivos:** `src/lib/guest/eligibility.ts`, `src/lib/guest/credits.ts`, `src/actions/guest.ts`, `src/lib/guest/__tests__/guest-allowance.test.ts`, `src/actions/__tests__/guest-special-package.test.ts`
+- **Tests 🔴:**
+  1. Especial con N=2: dos invitados → OK; el tercero se rechaza.
+  2. Cancelar un invitado a tiempo restaura exactamente 1 y borra solo la fila con su `guest_enrollment_id` (H10).
+  3. El titular consume su crédito de grupo (con las reglas de BE-02) y el invitado uno de invitado.
+  4. Especial con N=0 y `standard` → `getGuestAllowance` devuelve `null`.
+  5. **Regresión:** los tests actuales de `guest*.test.ts` y `admin-guest.test.ts` (Open Lab) pasan sin cambiar sus expectativas.
+- **Verificar:** `pnpm test src/lib/guest src/actions/__tests__/guest*.test.ts src/actions/__tests__/admin-guest.test.ts`
+
+### TASK-SP-BE-08 · Guarda estructural INV-3
+- **Archivos:** `src/__tests__/credit-writers.test.ts`
+- **Test 🔴:** recorre `src/actions` y `src/lib` (sin `__tests__`) y falla si algún archivo distinto de `lib/subscription/credits.ts` escribe `days_remaining`, `daysRemaining`, `credits_remaining`, `creditsRemaining` o `balanceId` dentro de `set(`, `SET ` o `values(`.
+- **Verificar:** `pnpm test src/__tests__/credit-writers.test.ts`
+
+### TASK-SP-BE-09 · Server Actions del catálogo
+- **Archivos:** `src/actions/admin-packages.ts`, `src/lib/types/actions.ts` (`FormActionResult`), `src/actions/__tests__/admin-packages.test.ts`
+- **Descripción:** las cuatro acciones de SPEC §4.3.
+- **Tests 🔴:**
+  1. Coach y client reciben «No tienes permisos para esta acción.» sin que se llame a la BD.
+  2. Una entrada inválida devuelve `fieldErrors` con las claves de Zod y no escribe nada.
+  3. Crear un especial inserta el catálogo con `guest=false` y `sessions=Σ`, más sus reglas, en una transacción.
+  4. Editar con un `kind` distinto → error en `kind`.
+  5. Editar reemplaza solo las reglas de **ese** paquete y no escribe en `user_subscription_balances` ni en `user_suscriptions` (D4).
+  6. Marcar `isFeatured` desmarca a los demás en la misma transacción.
+  7. Eliminar hace `deleted_at=now()` e `is_active=false`. Un test estático confirma que **ningún** archivo de `src/` llama `db.delete(subscriptions)`.
+  8. Todas las acciones exitosas llaman `revalidatePath('/')`, `('/client/subscription')` y `('/admin/packages')`.
+- **Verificar:** `pnpm test src/actions/__tests__/admin-packages.test.ts`
+
+### TASK-SP-Q-01 · Modelos de lectura
+- **Archivos:** `src/lib/queries/packages.ts`, `src/lib/queries/__tests__/packages.test.ts`
+- **Descripción:** las funciones y tipos de SPEC §4.4.
+- **Tests 🔴:**
+  1. `getPublicPackages` filtra `is_active AND deleted_at IS NULL` y ordena por `display_order, price` (verificado con `sqlToQuery`).
+  2. `toPackageCardView`: «∞ Open Lab» y «ACCESO ILIMITADO» para `guest`; «UNA SESIÓN»; «8 SESIONES»; «1 YOGA · 1 MAT PILATES / BARRE»; precio `1,850`; «Vigencia: 2 semanas» para 14 días; `ctaLabel` «RESERVAR TODO» solo si es ilimitado y destacado.
+  3. `getAdminPackages` lanza un error si quien consulta no es admin, antes de tocar la BD.
+  4. `getClientSubscriptionView` arma el estado `special` con `summary`, `timeWindow` («07:00–11:00»), `exhausted` y `guestCredits`; para `standard` y Open Lab devuelve lo mismo que hoy.
+- **Verificar:** `pnpm test src/lib/queries/__tests__/packages.test.ts`
+
+---
+
+## Fase 3 · UI Admin
+
+### TASK-SP-ADM-01 · Entrada «Paquetes» en el menú
+- **Archivos:** `src/components/layout/PortalNav.tsx`, `src/components/layout/__tests__/PortalNav.test.tsx`
+- **Tests 🔴:** con rol admin aparece «Paquetes» con `href="/admin/packages"` entre «Pagos» y «Clases»; con coach y client no aparece.
+- **Verificar:** `pnpm test src/components/layout/__tests__/PortalNav.test.tsx`
+
+### TASK-SP-ADM-02 · Listado de paquetes
+- **Archivos:** `src/app/(portal)/admin/packages/page.tsx`, `src/components/admin/packages/PackageList.tsx` y sus tests
+- **Tests 🔴:**
+  1. La página redirige a quien no es admin.
+  2. Se muestran orden, nombre, badge «Especial» o «Estándar», precio, vigencia, ventas y estado.
+  3. Activar/Desactivar llama a `setPackageActiveAction` y muestra el mensaje.
+  4. Eliminar abre la confirmación con el texto de SPEC §7.2 y solo llama a `softDeletePackageAction` al confirmar.
+  5. Sin paquetes aparece «Aún no hay paquetes.»
+- **Verificar:** `pnpm test src/components/admin/packages/__tests__/PackageList.test.tsx "src/app/(portal)/admin/packages"`
+
+### TASK-SP-ADM-03 · Formulario con límites (50 caracteres y 4 beneficios)
+- **Archivos:** `src/app/(portal)/admin/packages/new/page.tsx`, `src/app/(portal)/admin/packages/[id]/edit/page.tsx`, `src/components/admin/packages/PackageForm.tsx`, `src/components/admin/packages/__tests__/PackageForm.test.tsx`
+- **Tests 🔴:**
+  1. El campo de descripción tiene `maxLength=49`; el contador muestra «49/49» al llegar al límite.
+  2. Al pegar 50 caracteres o más, el valor se recorta a 49 y aparece el mensaje de Zod.
+  3. Con 4 beneficios, «Agregar beneficio» queda deshabilitado y aparece «Máximo 4 beneficios»; al quitar uno se vuelve a habilitar.
+  4. Vigencia de 2 semanas muestra «= 14 días».
+  5. El tipo solo se elige al crear; al editar se muestra como texto.
+  6. Los `fieldErrors` del servidor aparecen bajo su campo.
+  7. Con `salesCount > 0` aparece el aviso «Los cambios aplican solo a compras nuevas.»
+  8. Envía un objeto `PackageInput` a la acción correcta (crear o editar).
+- **Verificar:** `pnpm test src/components/admin/packages/__tests__/PackageForm.test.tsx`
+
+### TASK-SP-ADM-04 · Constructor de reglas y vista previa
+- **Archivos:** `src/components/admin/packages/PackageRulesBuilder.tsx`, `src/components/sections/PackageCard.tsx` (de LND-01), tests
+- **Tests 🔴:**
+  1. Solo aparece en paquetes especiales.
+  2. Las casillas de disciplinas vienen de `CLASS_TYPES` (incluye Sculpt).
+  3. El interruptor «Limitar horario» muestra y oculta los dos campos de hora.
+  4. Agregar y quitar grupos, entre 1 y 6.
+  5. «Sesiones del paquete» muestra Σ de créditos.
+  6. La vista previa `PackageCard` cambia con cada edición.
+- **Verificar:** `pnpm test src/components/admin/packages/__tests__/PackageRulesBuilder.test.tsx`
+
+### TASK-SP-ADM-05 · Desglose y selector de grupo en suscripciones de clientes (D5)
+- **Archivos:** `src/components/admin/SubscriptionManagement.tsx`, `src/app/(portal)/admin/subscriptions/page.tsx`, tests
+- **Tests 🔴:** una suscripción especial muestra sus grupos con saldo/total; +1 y −1 abren el selector y envían `balanceId`; las suscripciones `standard` no cambian.
+- **Verificar:** `pnpm test src/components/admin/__tests__/SubscriptionManagement*.test.tsx`
+
+---
+
+## Fase 4 · UI Cliente
+
+### TASK-SP-CLI-01 · Desglose de créditos en el dashboard
+- **Archivos:** `src/app/(portal)/client/page.tsx`, `src/components/client/CreditBalances.tsx`, `src/components/client/__tests__/CreditBalances.test.tsx`
+- **Tests 🔴:**
+  1. Con el Reset Pass sin usar se muestran «1 clase de Yoga» y «1 clase de Mat Pilates / Barre».
+  2. Después de usar Mat, el grupo B aparece atenuado con «0 de 1 · Mat Pilates / Barre» y la etiqueta «Usada».
+  3. Un grupo con franja muestra «Solo de 07:00 a 11:00».
+  4. El encabezado muestra el paquete, «Vence DD/MM/YYYY» y «Te quedan N clases».
+  5. Aparece la fila de pases de invitado si aplica.
+  6. **Regresión:** `standard` y Open Lab renderizan igual que hoy (tests actuales del dashboard en verde).
+- **Verificar:** `pnpm test src/components/client/__tests__/CreditBalances.test.tsx "src/app/(portal)/client/__tests__"`
+
+### TASK-SP-CLI-02 · Tienda y aviso de cambio de paquete
+- **Archivos:** `src/app/(portal)/client/subscription/page.tsx`, `src/components/client/SubscriptionCard.tsx`, `src/components/client/ActiveSubscriptionWarning.tsx` y sus tests
+- **Tests 🔴:**
+  1. Solo se listan los paquetes de `getPublicPackages()`.
+  2. La tarjeta de un especial muestra el desglose y la vigencia.
+  3. El aviso **no** contiene «se acumularán» y sí el texto de SPEC §6.2 con nombre, créditos y fecha.
+- **Verificar:** `pnpm test src/components/client/__tests__/SubscriptionCard.test.tsx src/components/client/__tests__/ActiveSubscriptionWarning.test.tsx`
+
+### TASK-SP-CLI-03 · Indicador de crédito en la lista de clases
+- **Archivos:** `src/components/client/ClassList.tsx`, `src/app/(portal)/client/classes/page.tsx`, tests
+- **Tests 🔴:** una clase reservable muestra «Usa: 1 clase de Yoga»; una no reservable tiene el botón deshabilitado y el mensaje de `explainRejection`; con `standard` y Open Lab no cambia nada.
+- **Verificar:** `pnpm test src/components/client/__tests__/ClassList*.test.tsx`
+
+---
+
+## Fase 5 · Landing
+
+### TASK-SP-LND-01 · `PackageCard` idéntica a la tarjeta actual
+- **Archivos:** `src/components/sections/PackageCard.tsx`, `src/components/sections/pricing-grid.ts` (`getPricingGridClass`), `src/components/sections/__tests__/PackageCard.test.tsx`, `src/components/sections/__tests__/pricing-grid.test.ts`
+- **Paso previo:** **antes** de tocar `Pricing.tsx`, se guarda su HTML actual como fixture (`__tests__/fixtures/pricing-legacy.html`).
+- **Tests 🔴:**
+  1. **Equivalencia:** con los 5 paquetes del fixture convertidos a `PackageCardView`, el HTML de las 5 `PackageCard` es idéntico al de las tarjetas del fixture, salvo las clases de protección (`line-clamp-2`, `truncate`) y el atributo `title`.
+  2. La variante destacada usa `bg-warm-wood`, `scale-105`, el badge «PREMIUM» y el ícono `all_inclusive`; la normal usa `check`.
+  3. Una descripción de 49 caracteres tiene `line-clamp-2`; cada beneficio tiene `truncate` y `title`.
+  4. Nunca se renderizan más de 4 beneficios.
+  5. `getPricingGridClass`: una prueba por fila de la tabla de SPEC §9. Con 5 devuelve exactamente `grid-cols-1 md:grid-cols-3 lg:grid-cols-5` (igual que hoy).
+- **Verificar:** `pnpm test src/components/sections/__tests__/PackageCard.test.tsx src/components/sections/__tests__/pricing-grid.test.ts`
+
+### TASK-SP-LND-02 · `Pricing` lee la BD
+- **Archivos:** `src/components/sections/Pricing.tsx`, `src/components/sections/__tests__/Pricing.test.tsx`
+- **Tests 🔴** (con `getPublicPackages` simulado):
+  1. Renderiza los paquetes en el orden recibido.
+  2. Un paquete inactivo no aparece: se verifica que el filtro esté en la consulta (Q-01) y que el componente no haga otra consulta.
+  3. Sin paquetes, se conservan el encabezado y el ancla `#paquetes`, y aparece «Pronto anunciaremos nuestros paquetes.»
+  4. Con un especial aparecen su desglose y «+N Invitados».
+  5. El contenedor usa `getPricingGridClass(n)`.
+- **Manual:** en el navegador integrado, revisar 375, 768 y 1280 px con 1, 5 y 8 paquetes.
+- **Verificar:** `pnpm test src/components/sections/__tests__/Pricing.test.tsx`
+
+---
+
+## Fase 6 · Cierre
+
+### TASK-SP-LEGAL-01 · Términos y Condiciones — ✅ Ejecutada (2026-10-07)
+- **Archivos:** `src/app/terminos-y-condiciones/page.tsx`, `src/app/terminos-y-condiciones/__tests__/page.test.tsx`
+- **Tests (🔴 6 fallando → 🟢 11/11):**
+  1. §3: vigencia de «treinta (30) días naturales contados a partir de la confirmación del pago» y vencimiento cuando «concluyan las clases ya reservadas».
+  2. §3: «Paquetes especiales» con vigencia propia, «Mat Pilates o Barre», «hora de inicio de la clase», créditos «no son intercambiables entre grupos» y «pases de invitado».
+  3. §3: «Cambio de paquete» con «una sola suscripción vigente», «al confirmarse el pago», «no son reembolsables ni transferibles», reservas que «se conservan» y crédito que «no se reintegra».
+  4. §3: «condiciones publicadas al momento de la compra». §4: «precio vigente al momento de registrar la compra».
+  5. §5: «mismo grupo de disciplinas» y «ya no está vigente, el Estudio repondrá la sesión».
+  6. `lastUpdated` = «7 de octubre de 2026».
+- **Pendiente (usuario):** revisión legal de la cláusula de cambio de paquete.
+- **Verificar:** `pnpm test src/app/terminos-y-condiciones/__tests__/page.test.tsx`
+
+### TASK-SP-DOC-01 · Documentación
+- ✅ `CLAUDE.md` (2026-10-07): tablas nuevas, `class_type` con `sculpt`, ciclo de vida corregido (créditos agotados, una sola suscripción activa, precios y condiciones fijados al comprar), catálogo de paquetes, reglas de paquetes especiales (INV-1, INV-3, INV-5) y permisos de tipos de clase por rol.
+- Pendiente al cerrar: marcar `SPEC-SPECIAL-PACKAGES.md` y esta sección como ejecutadas, con resultados.
+
+### TASK-SP-VERIFY-01 · Verificación final
+- **Comandos:** `pnpm test`, `npx tsc --noEmit`, `pnpm build` y `pnpm lint` (sin problemas nuevos respecto a la base: hoy hay 61, con 20 errores y 41 advertencias).
+- **E2E manual (usuario, en una BD que no sea de producción):**
+  1. Crear «Reset Pass» ($179, 2 semanas, A = 1×Yoga, B = 1×Mat/Barre) y verlo en la landing.
+  2. Comprarlo como cliente, confirmar el pago y comprobar que vence en 14 días.
+  3. Reservar Mat; intentar Barre (rechazo con mensaje); reservar Yoga.
+  4. Cancelar Mat a tiempo y ver que el crédito vuelve al grupo B en el dashboard.
+  5. Comprar otro paquete y confirmarlo: el anterior queda vencido.
+  6. Editar el precio del Reset Pass: el pago anterior conserva su monto.
+  7. Desactivar el paquete: desaparece de la landing y de la tienda.
+
+---
+
 # TASK-CA — Auditoría de cancelaciones + Términos (regla de 10 min)
 
 **Estado:** ✅ Ejecutado (2026-09-24). Suite: 732/732 tests (94 archivos), `tsc` limpio, `pnpm build` OK y `pnpm lint` sin problemas nuevos (los 7 que aparecen en `admin-guest.test.ts` y `guest.ts` ya existían en `HEAD`). **Pendiente (usuario):** TASK-CA-DB-02 y el E2E manual de TASK-CA-VERIFY-01.
