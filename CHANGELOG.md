@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.0](https://github.com/cumtual/TheLabPilates/compare/v1.14.0...v1.15.0) (2026-10-07)
+
+
+### Features
+
+* admin-only cancellation audit and 10-minute grace clause in terms ([85a2efe](https://github.com/cumtual/TheLabPilates/commit/85a2efee95ca7ecfe54005b29b38636d40630b77))
+* agregar nuevo tipo de clase "Sculpt" y actualizar permisos de creación ([24d937e](https://github.com/cumtual/TheLabPilates/commit/24d937e354f96344bcabd23f705b04e3a2c43e2e))
+* implement decrement of subscription credits and transition to e… ([17f36d1](https://github.com/cumtual/TheLabPilates/commit/17f36d1d4f71743b05d6a7ded09ff434fea88bd8))
+* implement decrement of subscription credits and transition to expired status ([dd7ccaf](https://github.com/cumtual/TheLabPilates/commit/dd7ccafa59b421f56aecfabc9e969a41c9f2927e))
+* QR code class check-in with automatic absence closing ([a213529](https://github.com/cumtual/TheLabPilates/commit/a21352961f0a2ce52eb0f912344ab50eda633101))
+* QR code class check-in with automatic absence closing ([0374c5b](https://github.com/cumtual/TheLabPilates/commit/0374c5b64ade14b49265b899fe97466f3835e37b))
+* **subscription:** implement special package credit management and v… ([3b34c4e](https://github.com/cumtual/TheLabPilates/commit/3b34c4e8f18194e80c904779f444a0633479f5a5))
+* **subscription:** implement special package credit management and validation ([eeb0eff](https://github.com/cumtual/TheLabPilates/commit/eeb0effb23aa60ade253115628f4a0c1818ea9c6))
+
 ## [1.14.0](https://github.com/cumtual/TheLabPilates/compare/v1.13.0...v1.14.0) (2026-09-16)
 
 
