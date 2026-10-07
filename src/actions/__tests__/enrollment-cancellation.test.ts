@@ -56,7 +56,7 @@ function setupSelects(createdAt: Date, isOpenLab = false) {
                   status: 'pending',
                   createdAt,
                 },
-                userSubscription: { id: 'sub-1', userId: OWNER },
+                userSubscription: { id: 'sub-1', userId: OWNER, active: true },
               },
             ]),
           }),

@@ -64,11 +64,12 @@ Tests live next to code in `__tests__/` folders.
 
 ### Key schema (`src/db/schema.ts`)
 - Tables: `users`, `password_resets`, `suscriptions` (plan catalog — note spelling), `user_suscriptions`, `payments`, `open_class` (classes), `class_enrollments`, `special_events`, `special_event_discounts`, `special_event_registrations`, `debit_cards`, `guest_enrollments`, `guest_credits`.
+- Special packages (`SPEC-SPECIAL-PACKAGES.md`): `subscription_rules` (catalog groups: N credits of [class types] in an optional CDMX time window) and `user_subscription_balances` (per-purchase copy of each rule with `credits_remaining`). `class_enrolleds.balance_id` records which group a booking consumed.
 - Enums:
   - `user_role`: client | coach | admin
   - `subscription_status`: pending | active | suspended | expired
   - `class_status`: scheduled | cancelled | completed
-  - `class_type`: yoga | mat_pilates | barre | personalizada
+  - `class_type`: yoga | mat_pilates | barre | personalizada | sculpt (source of truth: `CLASS_TYPES` in `src/lib/utils/class-type.ts`)
   - `enrollment_status`: pending | attended | absent | late_cancelled | cancelled
   - `event_registration_status`: pending | confirmed | refund_pending | refunded
   - `payment_type`: cash | transfer | card
@@ -88,12 +89,26 @@ Tests live next to code in `__tests__/` folders.
   - `created_at` and `cancelled_at` are **admin-only**. Read them only through `src/lib/queries/admin-enrollment-audit.ts`, which checks the role, and never add them to the shared coach queries in `lib/queries/coach.ts`.
   - The text in `/terminos-y-condiciones` §5 must match these rules exactly.
 - **Subscription lifecycle:**
-  - **Open Lab:** valid 30 days (`days_remaining`), no credit tracking, **1 guest credit per month**.
-  - **Credit packages (Progress, Practice, Entry, Pass):** credits valid for 1 month; when credits reach 0 **or** the month ends → `expired` (**NEVER** `suspended`).
+  - **Open Lab** (`guest = true`): unlimited classes, valid 30 days from payment confirmation, no credit tracking, **1 guest credit per month**. `guest = true` means "Open Lab" everywhere in the code.
+  - **Credit packages (Progress, Practice, Entry, Pass):** `days_remaining` holds the remaining **credits** (not days). Valid 30 days from payment confirmation. When the 30 days end → `expired`. When credits reach 0, the subscription stays active (dashboard shows "Sin créditos") until every class booked with it is completed, then → `expired` (`lib/queries/check-subscription-expiration.ts`). **NEVER** `suspended`.
   - `suspended` is reserved for **manual admin intervention only**.
+  - **One active subscription per user.** When the admin confirms the payment of a new package, the user's previous active subscription becomes `expired` (`active = false`) and its remaining credits are lost. Its existing bookings are kept and can be attended; cancelling one does **not** refund the credit. Exception: if the studio cancels the class, `cancelClassAction` reports those users and the admin restores the session on their current subscription (terms §5.7). The purchase screen warns about this before confirming. The previous subscription is expired at payment confirmation, never at purchase, so a rejected payment leaves it untouched.
+  - **Prices and conditions are fixed at purchase:** each `user_suscriptions` row stores `price_snapshot`, `validity_days_snapshot` and `guest_credits_snapshot`, and special packages copy their rules into `user_subscription_balances`. Editing the catalog only affects new purchases. `NULL` snapshots mean a subscription bought before this change and follow the legacy rules (30 days, catalog price).
+- **Package catalog (`/admin/packages`, admin only):**
+  - Packages are never hard-deleted (`user_suscriptions.suscription_id` cascades): use `is_active` and `deleted_at`. Only active, non-deleted packages appear in the landing (`#paquetes`) and in `/client/subscription`, both read from the DB.
+  - Card content: short description **< 50 characters** (max 49), **at most 4** features of up to 24 characters, validated by the shared Zod schema in `src/lib/subscription/package-schema.ts` and by DB `CHECK`s. At most one featured package.
+  - Validity is configurable per package (days or weeks, stored as days, 1–365) and counts from payment confirmation.
+- **Special packages (`kind = 'special'`):**
+  - Made of 1–6 credit groups. Each group has N credits, a list of allowed class types and an optional time window (`HH:MM`–`HH:MM`, CDMX, inclusive on both ends, evaluated on the class **start** time). Example: "Reset Pass" = 1 Yoga + 1 of [Mat Pilates | Barre]; once Mat is booked, Barre is rejected and only Yoga remains.
+  - Booking picks the most restrictive usable group (fewest class types, then with a time window, then `sort_order`). Rejections return a specific code and message (`CLASS_TYPE_NOT_INCLUDED`, `GROUP_EXHAUSTED`, `OUTSIDE_TIME_WINDOW`, `NO_CREDITS`).
+  - `days_remaining` always equals the sum of the groups' `credits_remaining`, updated in the same transaction. Only `src/lib/subscription/credits.ts` writes `days_remaining`, `credits_remaining` or `balance_id`.
+  - Lock order in every transaction: `open_class` → `user_suscriptions` → `user_subscription_balances`.
+  - A timely cancellation refunds the credit to the **same group**. Manual admin credit adjustments on a special package require choosing the group.
+  - A special package is never Open Lab (`guest = false`, enforced by a DB `CHECK`). It may include N guest passes (`guest_credits`, 0–10) for the whole validity period; cancelling a guest in time restores only that guest's pass.
+  - The text in `/terminos-y-condiciones` §3 and §4 must match these rules.
 - **Roles & permissions:**
-  - **Admin:** full control, cancels classes, approves payments.
-  - **Coach:** may edit capacity and date/time **only of their own assigned classes**. **Must not cancel classes.**
+  - **Admin:** full control, cancels classes, approves payments, manages the package catalog.
+  - **Coach:** may edit capacity and date/time **only of their own assigned classes**. **Must not cancel classes.** May create every class type **except `personalizada`** (custom name), which is admin-only. Server actions validate with `canRoleCreateClassType`; forms use `getClassTypeOptions(role)` from `src/lib/utils/class-type.ts`.
   - **Client:** books classes; sees bank-transfer details only when they have pending payments.
 - **Attendance (QR check-in, `SPEC-QR-CHECKIN.md`):**
   - Each `pending` enrollment has a single-use `checkin_token` (64 hex).

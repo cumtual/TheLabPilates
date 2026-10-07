@@ -9,10 +9,14 @@ import { GRACE_PERIOD_MINUTES } from '@/lib/utils/date';
  * reembolsa, fuera de ambos es cancelación tardía sin reposición.
  */
 
-function sectionText() {
+function textOfSection(name: RegExp) {
   render(<TermsPage />);
-  const heading = screen.getByRole('heading', { name: /Política de cancelaciones y reembolso de créditos/i });
+  const heading = screen.getByRole('heading', { name });
   return heading.closest('section')?.textContent ?? heading.parentElement?.textContent ?? '';
+}
+
+function sectionText() {
+  return textOfSection(/Política de cancelaciones y reembolso de créditos/i);
 }
 
 describe('/terminos-y-condiciones — política de cancelación', () => {
@@ -46,7 +50,54 @@ describe('/terminos-y-condiciones — política de cancelación', () => {
 
   it('actualiza la fecha de última actualización y conserva el título', () => {
     render(<TermsPage />);
-    expect(screen.getByText(/Última actualización: 24 de septiembre de 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Última actualización: 7 de octubre de 2026/)).toBeInTheDocument();
     expect(metadata.title).toBe('Términos y Condiciones');
+  });
+});
+
+/**
+ * Paquetes especiales y cambio de paquete (SPEC-SPECIAL-PACKAGES §10, D2–D7).
+ */
+describe('/terminos-y-condiciones — paquetes y suscripciones', () => {
+  const membershipSection = () => textOfSection(/Membresías y paquetes de créditos/i);
+
+  it('la vigencia de los paquetes por créditos cuenta desde la confirmación del pago', () => {
+    const text = membershipSection();
+    expect(text).toContain('treinta (30) días naturales contados a partir de la confirmación del pago');
+    expect(text).toMatch(/concluyan las clases ya reservadas/);
+  });
+
+  it('describe los paquetes especiales: vigencia propia, disciplinas, combinaciones, franja horaria e invitados', () => {
+    const text = membershipSection();
+    expect(text).toContain('Paquetes especiales');
+    expect(text).toMatch(/vigencia propia/);
+    expect(text).toMatch(/Mat Pilates o Barre/);
+    expect(text).toMatch(/hora de inicio de la clase/);
+    expect(text).toMatch(/no son intercambiables entre grupos/);
+    expect(text).toMatch(/pases de invitado/);
+  });
+
+  it('establece una sola suscripción vigente y las consecuencias del cambio de paquete', () => {
+    const text = membershipSection();
+    expect(text).toContain('Cambio de paquete');
+    expect(text).toMatch(/una sola suscripción vigente/);
+    expect(text).toMatch(/al confirmarse el pago/i);
+    expect(text).toMatch(/no son reembolsables ni transferibles/);
+    expect(text).toMatch(/Reservas ya realizadas se conservan/);
+    expect(text).toMatch(/no se reintegra/);
+  });
+
+  it('las condiciones de lo comprado no cambian con ediciones posteriores del catálogo', () => {
+    expect(membershipSection()).toMatch(/condiciones publicadas al momento de la compra/);
+  });
+
+  it('a cada compra le aplica el precio vigente al registrarla', () => {
+    expect(textOfSection(/Precios y pagos/i)).toMatch(/precio vigente al momento de registrar la compra/);
+  });
+
+  it('la cancelación reintegra al mismo grupo y el Estudio repone si la suscripción ya no está vigente', () => {
+    const text = sectionText();
+    expect(text).toMatch(/mismo grupo de disciplinas/);
+    expect(text).toMatch(/ya no está vigente, el Estudio repondrá la sesión/);
   });
 });

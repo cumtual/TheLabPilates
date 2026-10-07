@@ -11,7 +11,18 @@ vi.mock('@/db', () => ({
       payments: {
         findFirst: vi.fn(),
       },
+      // Catálogo: paquete estándar activo (SPEC-SPECIAL-PACKAGES H9).
+      subscriptions: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'pkg', kind: 'standard', isActive: true, deletedAt: null, price: 360, validityDays: null, guestCredits: 0, rules: [],
+        }),
+      },
     },
+    // La compra es atómica: la transacción reutiliza el mismo cliente simulado.
+    transaction: vi.fn(async (cb: (tx: unknown) => unknown) => {
+      const { db } = await import('@/db');
+      return cb(db);
+    }),
     insert: vi.fn(() => ({
       values: vi.fn(() => ({
         returning: vi.fn(),

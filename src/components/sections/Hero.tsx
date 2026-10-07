@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import Image from 'next/image'
 
 export default function Hero() {
@@ -46,9 +45,9 @@ export default function Hero() {
           <span className="italic font-normal">conectar</span> contigo
         </h1>
         <div className="flex flex-col md:flex-row gap-6 justify-center items-center">
-          <Link href="/login" className="bg-soft-charcoal text-plaster-white px-10 py-5 text-[12px] font-semibold tracking-[0.2em] hover:bg-primary transition-colors uppercase cursor-pointer">
-            RESERVAR LAB PASS
-          </Link>
+          <a href="#paquetes" className="bg-soft-charcoal text-plaster-white px-10 py-5 text-[12px] font-semibold tracking-[0.2em] hover:bg-primary transition-colors uppercase cursor-pointer">
+            MEMBRESÍAS
+          </a>
           <a
             className="text-[12px] font-semibold tracking-widest text-soft-charcoal border-b border-soft-charcoal pb-1 hover:text-primary hover:border-primary transition-all uppercase"
             href="#filosofia"

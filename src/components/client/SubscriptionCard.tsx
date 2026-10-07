@@ -13,6 +13,11 @@ export interface SubscriptionPackage {
   sessions: number | null;
   guest: boolean | null;
   price: number | null;
+  shortDescription?: string;
+  /** Paquetes especiales: «1 clase de Yoga», «1 clase de Mat Pilates / Barre · 07:00–11:00». */
+  breakdown?: string[];
+  validityLabel?: string;
+  guestBadge?: string | null;
 }
 
 export interface ActiveBankCard {
@@ -64,7 +69,12 @@ export function SubscriptionCard({ pkg, hasPendingPayment, activeCard }: Subscri
         {pkg.guest && (
           <Badge variant="active">+1 Invitado</Badge>
         )}
+        {!pkg.guest && pkg.guestBadge && <Badge variant="active">{pkg.guestBadge}</Badge>}
       </div>
+
+      {pkg.shortDescription && (
+        <p className="font-body text-sm italic text-on-surface-variant line-clamp-2">{pkg.shortDescription}</p>
+      )}
 
       {/* Package Info */}
       <div className="space-y-2">
@@ -76,6 +86,19 @@ export function SubscriptionCard({ pkg, hasPendingPayment, activeCard }: Subscri
             {pkg.guest ? "Ilimitadas" : (pkg.sessions ?? 0)}
           </span>
         </div>
+        {pkg.breakdown && pkg.breakdown.length > 0 && (
+          <ul aria-label="Incluye" className="space-y-1 pl-1">
+            {pkg.breakdown.map((line) => (
+              <li key={line} className="flex items-center gap-2 font-body text-sm text-on-surface">
+                <span className="material-symbols-outlined text-[16px] text-primary" aria-hidden="true">check</span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        )}
+        {pkg.validityLabel && (
+          <p className="font-body text-sm text-on-surface-variant">{pkg.validityLabel}</p>
+        )}
         <div className="flex items-center justify-between">
           <span className="font-body text-body-md text-on-surface-variant">
             Precio

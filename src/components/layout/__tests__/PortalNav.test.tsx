@@ -104,4 +104,22 @@ describe('PortalNav', () => {
       expect(screen.getAllByText('Cerrar sesión')).toHaveLength(2);
     });
   });
+
+  describe('catálogo de paquetes (SPEC-SPECIAL-PACKAGES §7.1)', () => {
+    it('admin ve «Paquetes» → /admin/packages entre «Pagos» y «Clases»', () => {
+      const { container } = render(<PortalNav role="admin" userName="Admin" />);
+      const sidebar = Array.from(container.querySelectorAll('[aria-label="Navegación del portal"]')).find((el) =>
+        el.className.includes('hidden md:flex')
+      ) as HTMLElement;
+      const hrefs = Array.from(sidebar.querySelectorAll('a')).map((link) => link.getAttribute('href'));
+      const pagos = hrefs.indexOf('/admin/payments');
+      expect(hrefs.slice(pagos, pagos + 3)).toEqual(['/admin/payments', '/admin/packages', '/admin/classes']);
+      expect(screen.getAllByRole('link', { name: /Paquetes/ })[0]).toHaveAttribute('href', '/admin/packages');
+    });
+
+    it.each(['coach', 'client'] as const)('%s no ve «Paquetes»', (role) => {
+      render(<PortalNav role={role} userName="X" />);
+      expect(screen.queryByText('Paquetes')).not.toBeInTheDocument();
+    });
+  });
 });

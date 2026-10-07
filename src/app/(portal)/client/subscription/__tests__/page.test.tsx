@@ -87,3 +87,20 @@ describe('Client subscription page — suspended banner', () => {
     expect(screen.getByText('Tienes una suscripción suspendida')).toBeInTheDocument();
   });
 });
+
+describe('Client subscription page — catálogo (SPEC-SPECIAL-PACKAGES §8.2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sub: 'user-uuid', role: 'client', email: 'client@test.com' });
+    (db.query.debitCards.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (db.query.userSubscriptions.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (db.query.subscriptions.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+  });
+
+  it('solo lista paquetes activos y no eliminados (filtro en la consulta)', async () => {
+    await SubscriptionPage({ searchParams: Promise.resolve({}) });
+    const args = (db.query.subscriptions.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(args).toHaveProperty('where');
+    expect(args).toHaveProperty('orderBy');
+  });
+});

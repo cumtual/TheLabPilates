@@ -7,13 +7,15 @@ import {
   guestCredits,
 } from '@/db/schema';
 import type { GuestEligibilityResult } from '@/lib/types/guest';
+import { guestCreditsTotalFor } from './credits';
 
 /**
- * Check if a user has an active Open Lab membership that is eligible for guest invitations.
+ * Check if a user has an active membership that includes guest passes: Open Lab
+ * (`guest = true`, 1 per cycle) or a special package with `guest_credits_snapshot > 0` (D6).
  *
  * Conditions (ALL must be met):
  * 1. User has a subscription with status 'active'
- * 2. The associated subscription plan has `guest = true`
+ * 2. The plan includes guest passes (`guestCreditsTotalFor > 0`)
  * 3. The payment is confirmed
  * 4. The membership has not expired (expiration_date > now)
  */
@@ -21,6 +23,8 @@ export async function isUserOpenLabEligible(userId: string): Promise<{
   eligible: boolean;
   userSubscription: typeof userSubscriptions.$inferSelect | null;
   subscription: typeof subscriptions.$inferSelect | null;
+  /** Pases de invitado de la membresía (Open Lab: 1). */
+  guestCreditsTotal: number;
 }> {
   const now = new Date();
 
@@ -44,8 +48,8 @@ export async function isUserOpenLabEligible(userId: string): Promise<{
 
   // Find the first subscription that meets all eligibility criteria
   const eligible = results.find((row) => {
-    // Must be an Open Lab plan (guest = true)
-    if (!row.subscription.guest) return false;
+    // Must include guest passes: Open Lab or a special package with passes
+    if (guestCreditsTotalFor(row) <= 0) return false;
     // Payment must be confirmed
     if (!row.payment.confirmed) return false;
     // Must not be expired
@@ -58,6 +62,7 @@ export async function isUserOpenLabEligible(userId: string): Promise<{
       eligible: false,
       userSubscription: null,
       subscription: null,
+      guestCreditsTotal: 0,
     };
   }
 
@@ -65,6 +70,7 @@ export async function isUserOpenLabEligible(userId: string): Promise<{
     eligible: true,
     userSubscription: eligible.userSub,
     subscription: eligible.subscription,
+    guestCreditsTotal: guestCreditsTotalFor(eligible),
   };
 }
 
@@ -103,7 +109,7 @@ export async function checkGuestEligibility(
 
   // Sum up all credits used for this subscription cycle
   const totalUsed = creditsUsed.reduce((sum, row) => sum + row.creditsUsed, 0);
-  const creditsAvailable = Math.max(0, 1 - totalUsed);
+  const creditsAvailable = Math.max(0, eligibility.guestCreditsTotal - totalUsed);
 
   if (creditsAvailable <= 0) {
     return {

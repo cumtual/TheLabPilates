@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
-import { desc, eq, count, ilike, or, and } from 'drizzle-orm';
+import { desc, eq, count, ilike, or, and, inArray } from 'drizzle-orm';
 import { getSession } from '@/lib/auth/session';
 import { db } from '@/db';
-import { userSubscriptions, users, subscriptions } from '@/db/schema';
+import { userSubscriptions, users, subscriptions, userSubscriptionBalances } from '@/db/schema';
+import { toCreditBalanceViews, type CreditBalanceView } from '@/lib/subscription/package-view';
 import { SubscriptionManagement } from '@/components/admin/SubscriptionManagement';
 
 const PAGE_SIZE = 10;
@@ -74,6 +75,7 @@ export default async function AdminSubscriptionsPage({
       clientEmail: users.email,
       subscriptionName: subscriptions.name,
       isOpenLab: subscriptions.guest,
+      packageKind: subscriptions.kind,
     })
     .from(userSubscriptions)
     .innerJoin(users, eq(userSubscriptions.userId, users.id))
@@ -110,6 +112,18 @@ export default async function AdminSubscriptionsPage({
     statusCounts.all += row.count;
   }
 
+  // Special packages: credit groups for the rows on this page (D5).
+  const specialIds = results.filter((row) => row.packageKind === 'special').map((row) => row.subscriptionId);
+  const balanceRows = specialIds.length
+    ? await db
+        .select()
+        .from(userSubscriptionBalances)
+        .where(inArray(userSubscriptionBalances.userSubscriptionId, specialIds))
+    : [];
+  const balancesBySubscription = new Map<string, CreditBalanceView[]>(
+    specialIds.map((id) => [id, toCreditBalanceViews(balanceRows.filter((b) => b.userSubscriptionId === id))])
+  );
+
   const allSubscriptions = results.map((row) => ({
     subscriptionId: row.subscriptionId,
     userId: row.userId,
@@ -121,6 +135,7 @@ export default async function AdminSubscriptionsPage({
     active: row.active ?? false,
     status: row.status,
     isOpenLab: row.isOpenLab ?? false,
+    balances: balancesBySubscription.get(row.subscriptionId),
   }));
 
   return (

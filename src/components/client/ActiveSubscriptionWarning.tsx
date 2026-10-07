@@ -5,12 +5,26 @@ import { Badge } from '@/components/ui/Badge';
 import Link from 'next/link';
 
 interface ActiveSubscriptionWarningProps {
+  /** Nombre del paquete vigente. */
+  packageName?: string | null;
   credits: number;
   expiration: string | null;
   isOpenLab?: boolean;
 }
 
-export function ActiveSubscriptionWarning({ credits, expiration, isOpenLab = false }: ActiveSubscriptionWarningProps) {
+/**
+ * Aviso previo a comprar otro paquete (SPEC-SPECIAL-PACKAGES §6.2, D2, S1, S3): al
+ * confirmarse el pago del nuevo paquete, el vigente vence y pierde sus créditos.
+ */
+export function ActiveSubscriptionWarning({ packageName, credits, expiration, isOpenLab = false }: ActiveSubscriptionWarningProps) {
+  const current = [
+    packageName ?? 'tu paquete',
+    isOpenLab ? 'clases ilimitadas' : `${credits} ${credits === 1 ? 'crédito' : 'créditos'}`,
+    expiration ? `vence ${expiration}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <Card className="border-primary/30 bg-primary/5">
       <div className="space-y-4">
@@ -39,9 +53,8 @@ export function ActiveSubscriptionWarning({ credits, expiration, isOpenLab = fal
         </div>
 
         <p className="font-body text-sm text-on-surface-variant">
-          {isOpenLab
-            ? 'Ya tienes Open Lab activo con clases ilimitadas. Si compras otro paquete, se creará una nueva suscripción.'
-            : 'Si compras un nuevo paquete, los créditos se acumularán a tu suscripción actual al ser confirmado el pago.'}
+          Al confirmarse el pago de tu nuevo paquete, tu suscripción actual ({current}) pasará a vencida y los
+          créditos restantes <strong>no</strong> se reembolsan ni se transfieren. Tus reservas ya hechas se mantienen.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 pt-2">

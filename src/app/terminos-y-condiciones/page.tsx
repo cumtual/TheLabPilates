@@ -13,7 +13,7 @@ export default function TermsPage() {
     <LegalShell
       title="Términos y Condiciones de Uso"
       subtitle="Contrato de adhesión aplicable al uso de la plataforma de reservas, las instalaciones y los servicios de The Lab Pilates Studio."
-      lastUpdated="24 de septiembre de 2026"
+      lastUpdated="7 de octubre de 2026"
     >
       <LegalSection title="1. Aceptación y capacidad legal">
         <p>
@@ -55,9 +55,38 @@ export default function TermsPage() {
           <li>
             <strong className="text-soft-charcoal">Paquetes por créditos (Lab Progress, Lab
             Practice, Lab Entry, Lab Pass):</strong> otorgan un número determinado de
-            créditos, no acumulables entre periodos, con una vigencia de 1 mes natural. Al
-            agotarse los créditos o al vencer el plazo, el paquete pasa a estado{' '}
-            <em>expirado</em> y los créditos remanentes no son reembolsables ni transferibles.
+            créditos, no acumulables entre periodos, con una vigencia de treinta (30) días
+            naturales contados a partir de la confirmación del pago. Cuando se agotan los
+            créditos y concluyan las clases ya reservadas con ellos, o al vencer el plazo, el
+            paquete pasa a estado <em>expirado</em> y los créditos remanentes no son
+            reembolsables ni transferibles.
+          </li>
+          <li>
+            <strong className="text-soft-charcoal">Paquetes especiales:</strong> son
+            paquetes promocionales con vigencia propia, indicada en su descripción y contada a
+            partir de la confirmación del pago. Pueden limitar las disciplinas en las que se usa
+            cada crédito, incluidas combinaciones del tipo «una clase de Yoga y una clase de Mat
+            Pilates o Barre»; en ese caso, al usar el crédito en una de las opciones se agota
+            para todas las del mismo grupo. También pueden limitar el horario a una franja, que
+            se evalúa según la hora de inicio de la clase en la Ciudad de México. Los créditos
+            de cada grupo no son intercambiables entre grupos. Un paquete especial puede incluir
+            pases de invitado en la cantidad que indique su descripción, sujetos a la sección 5.
+          </li>
+          <li>
+            <strong className="text-soft-charcoal">Condiciones aplicables:</strong> cada compra
+            se rige por las condiciones publicadas al momento de la compra (contenido,
+            vigencia, restricciones y pases de invitado). Los cambios posteriores al catálogo
+            solo aplican a compras nuevas.
+          </li>
+          <li>
+            <strong className="text-soft-charcoal">Cambio de paquete:</strong> cada usuario
+            puede tener una sola suscripción vigente. Si adquiere un nuevo paquete teniendo una
+            suscripción vigente, al confirmarse el pago del nuevo paquete la anterior pasará a
+            estado <em>expirado</em> y sus créditos remanentes no son reembolsables ni
+            transferibles. Las Reservas ya realizadas se conservan y puede asistir a ellas; sin
+            embargo, si las cancela, el Crédito no se reintegra, porque la suscripción con la
+            que se hicieron ya no está vigente. Antes de confirmar la compra, la plataforma le
+            mostrará la suscripción vigente y los créditos que perderá.
           </li>
           <li>
             <strong className="text-soft-charcoal">Suscripciones suspendidas:</strong> el
@@ -75,7 +104,8 @@ export default function TermsPage() {
           momento. Los pagos se realizan por transferencia bancaria (SPEI) o en efectivo en el
           estudio, y quedan sujetos a confirmación del administrador para activar la
           membresía. Las reservas no podrán realizarse mientras exista un pago pendiente de
-          confirmación.
+          confirmación. A cada compra le aplica el precio vigente al momento de registrar la
+          compra; los cambios de precio posteriores no la afectan.
         </p>
       </LegalSection>
 
@@ -97,7 +127,10 @@ export default function TermsPage() {
           al menos{' '}
           <strong className="text-soft-charcoal">veinticuatro (24) horas de anticipación</strong>{' '}
           a la Hora de Inicio, el Crédito se reintegra en su totalidad a la suscripción con la
-          que se hizo la Reserva, sin cargo ni penalización alguna.
+          que se hizo la Reserva, sin cargo ni penalización alguna. En los paquetes especiales,
+          el Crédito se reintegra al mismo grupo de disciplinas del que se descontó. Lo anterior
+          no aplica a Reservas de una suscripción reemplazada por un nuevo paquete (sección 3,
+          «Cambio de paquete»).
         </p>
         <p>
           <strong className="text-soft-charcoal">
@@ -136,7 +169,9 @@ export default function TermsPage() {
           <strong className="text-soft-charcoal">5.7 Cancelación por parte del Estudio.</strong>{' '}
           Si el Estudio cancela una clase por causa de fuerza mayor o decisión administrativa,
           los Créditos de todas las Reservas afectadas, y en su caso el crédito de invitado, se
-          reintegran en su totalidad sin que usted deba solicitarlo.
+          reintegran en su totalidad sin que usted deba solicitarlo. Si la suscripción con la
+          que se hizo la Reserva ya no está vigente, el Estudio repondrá la sesión en su
+          suscripción vigente.
         </p>
         <p>
           <strong className="text-soft-charcoal">5.8 Cupo y registro.</strong> El control de

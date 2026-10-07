@@ -42,10 +42,12 @@ vi.mock('@/lib/guest/eligibility', () => ({
   isUserOpenLabEligible: vi.fn(),
 }));
 
-vi.mock('@/lib/guest/credits', () => ({
+vi.mock('@/lib/guest/credits', async (importOriginal) => ({
   getGuestCreditsForCycle: vi.fn(),
   consumeGuestCredit: vi.fn(),
   restoreGuestCredit: vi.fn(),
+  // Consumo dentro de la transacción: se ejecuta real sobre el `tx` simulado.
+  consumeGuestCreditInTx: (await importOriginal<typeof import('@/lib/guest/credits')>()).consumeGuestCreditInTx,
 }));
 
 vi.mock('@/lib/guest/capacity', () => ({

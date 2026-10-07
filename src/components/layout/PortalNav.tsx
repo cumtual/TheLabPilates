@@ -36,6 +36,7 @@ const menuItems: Record<UserRole, MenuItem[]> = {
   admin: [
     { label: 'Dashboard', href: '/admin', icon: 'dashboard' },
     { label: 'Pagos', href: '/admin/payments', icon: 'payments' },
+    { label: 'Paquetes', href: '/admin/packages', icon: 'inventory_2' },
     { label: 'Clases', href: '/admin/classes', icon: 'fitness_center' },
     { label: 'Eventos', href: '/admin/events', icon: 'event' },
     { label: 'Usuarios', href: '/admin/users', icon: 'group' },

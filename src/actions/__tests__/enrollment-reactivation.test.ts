@@ -118,6 +118,7 @@ describe('enrollInClassAction — reactivación de una inscripción cancelada', 
     expect(state.set?.cancelledAt).toBeNull();
     expect(state.set?.checkedInAt).toBeNull();
     expect(state.set?.checkinToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(state.set).toHaveProperty('balanceId', null); // paquete estándar: sin grupo
 
     const where = toQuery(state.where);
     expect(where.sql).toContain('"class_enrolleds"."open_class_id" = $1');

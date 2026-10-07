@@ -12,6 +12,8 @@ import {
   specialEvents,
   specialEventDiscounts,
   specialEventRegistrations,
+  subscriptionRules,
+  userSubscriptionBalances,
 } from './schema';
 
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -32,6 +34,25 @@ export const passwordResetsRelations = relations(passwordResets, ({ one }) => ({
 
 export const subscriptionsRelations = relations(subscriptions, ({ many }) => ({
   userSubscriptions: many(userSubscriptions),
+  rules: many(subscriptionRules),
+}));
+
+export const subscriptionRulesRelations = relations(subscriptionRules, ({ one }) => ({
+  subscription: one(subscriptions, {
+    fields: [subscriptionRules.subscriptionId],
+    references: [subscriptions.id],
+  }),
+}));
+
+export const userSubscriptionBalancesRelations = relations(userSubscriptionBalances, ({ one }) => ({
+  userSubscription: one(userSubscriptions, {
+    fields: [userSubscriptionBalances.userSubscriptionId],
+    references: [userSubscriptions.id],
+  }),
+  rule: one(subscriptionRules, {
+    fields: [userSubscriptionBalances.ruleId],
+    references: [subscriptionRules.id],
+  }),
 }));
 
 export const paymentsRelations = relations(payments, ({ one }) => ({
@@ -55,6 +76,7 @@ export const userSubscriptionsRelations = relations(userSubscriptions, ({ one, m
     references: [users.id],
   }),
   classEnrollments: many(classEnrollments),
+  balances: many(userSubscriptionBalances),
 }));
 
 export const openClassesRelations = relations(openClasses, ({ one, many }) => ({
@@ -120,6 +142,10 @@ export const classEnrollmentsRelations = relations(classEnrollments, ({ one }) =
   userSubscription: one(userSubscriptions, {
     fields: [classEnrollments.userSubscriptionId],
     references: [userSubscriptions.id],
+  }),
+  balance: one(userSubscriptionBalances, {
+    fields: [classEnrollments.balanceId],
+    references: [userSubscriptionBalances.id],
   }),
 }));
 

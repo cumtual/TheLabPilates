@@ -7,6 +7,9 @@ vi.mock('@/db', () => ({
   },
 }));
 
+// Sin paquete especial activo: sin indicadores de crédito (SPEC-SPECIAL-PACKAGES §8.3).
+vi.mock('@/lib/queries/packages', () => ({ getActiveSpecialPackage: vi.fn().mockResolvedValue(null) }));
+
 vi.mock('@/lib/auth/session', () => ({
   getSession: vi.fn(),
 }));

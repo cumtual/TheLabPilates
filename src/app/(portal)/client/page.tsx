@@ -21,6 +21,9 @@ import { getClassDisplayName } from '@/lib/utils/class-type';
 import { getPendingTransferPayments } from '@/lib/queries/pending-transfers';
 import { getNextClassWithCheckin } from '@/lib/queries/next-class';
 import { CheckinQrButton } from '@/components/client/CheckinQrButton';
+import { CreditBalances } from '@/components/client/CreditBalances';
+import { getSubscriptionBalances } from '@/lib/queries/packages';
+import type { CreditBalanceView } from '@/lib/subscription/package-view';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -33,6 +36,14 @@ type SubscriptionState =
   | { type: 'active'; daysRemaining: number; expirationDate: string; paymentConfirmed: boolean }
   | { type: 'open_lab'; expirationDate: string; paymentConfirmed: boolean; guestCreditsAvailable: number }
   | { type: 'credits_exhausted'; expirationDate: string }
+  | {
+      type: 'special';
+      packageName: string;
+      expirationDate: string;
+      totalRemaining: number;
+      balances: CreditBalanceView[];
+      guestCredits: { available: number; total: number } | null;
+    }
   | { type: 'pending' }
   | { type: 'expired'; expirationDate: string }
   | { type: 'suspended' }
@@ -107,6 +118,22 @@ async function getSubscriptionState(userId: string): Promise<SubscriptionState> 
       expirationDate: userSub.expirationDate
         ? formatDate(new Date(userSub.expirationDate))
         : '--/--/----',
+    };
+  }
+
+  // Special package: remaining credits per discipline group (SPEC-SPECIAL-PACKAGES §8.1)
+  if (userSub.active && subscription?.kind === 'special') {
+    const guestTotal = userSub.guestCreditsSnapshot ?? 0;
+    return {
+      type: 'special',
+      packageName: subscription.name ?? 'Paquete',
+      expirationDate: userSub.expirationDate ? formatDate(new Date(userSub.expirationDate)) : '--/--/----',
+      totalRemaining: userSub.daysRemaining ?? 0,
+      balances: await getSubscriptionBalances(userSub.id),
+      guestCredits:
+        guestTotal > 0
+          ? { available: await getGuestCreditsForCycle(userId, userSub.id, guestTotal), total: guestTotal }
+          : null,
     };
   }
 
@@ -335,6 +362,16 @@ export default async function ClientDashboardPage() {
             </div>
           </div>
         </Card>
+      )}
+
+      {state.type === 'special' && (
+        <CreditBalances
+          packageName={state.packageName}
+          expirationDate={state.expirationDate}
+          totalRemaining={state.totalRemaining}
+          balances={state.balances}
+          guestCredits={state.guestCredits}
+        />
       )}
 
       {state.type === 'pending' && (
