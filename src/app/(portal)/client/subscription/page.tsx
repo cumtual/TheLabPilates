@@ -5,6 +5,7 @@ import { subscriptions, userSubscriptions, payments, debitCards } from '@/db/sch
 import { getSession } from '@/lib/auth/session';
 import { SubscriptionCard } from '@/components/client/SubscriptionCard';
 import { ActiveSubscriptionWarning } from '@/components/client/ActiveSubscriptionWarning';
+import { getPublicPackages } from '@/lib/queries/packages';
 import { Card } from '@/components/ui/Card';
 
 export default async function SubscriptionPage({
@@ -25,8 +26,18 @@ export default async function SubscriptionPage({
     ? { cardName: activeCard.cardName, cardNumber: activeCard.cardNumber, cardBank: activeCard.cardBank }
     : null;
 
-  // Fetch all available subscription packages
-  const packages = await db.query.subscriptions.findMany();
+  // Only active, non-deleted catalog packages (SPEC-SPECIAL-PACKAGES §8.2)
+  const packages = (await getPublicPackages()).map((view) => ({
+    id: view.id,
+    name: view.name,
+    sessions: view.sessions,
+    guest: view.isUnlimited,
+    price: view.price,
+    shortDescription: view.shortDescription,
+    breakdown: view.breakdown,
+    validityLabel: view.validityLabel,
+    guestBadge: view.guestBadge,
+  }));
 
   // Check if user has a pending (unconfirmed) payment
   let hasPendingPayment = false;
@@ -34,6 +45,7 @@ export default async function SubscriptionPage({
   let activeCredits = 0;
   let activeExpiration: string | null = null;
   let isOpenLab = false;
+  let activePackageName: string | null = null;
 
   const existingUserSubs = await db.query.userSubscriptions.findMany({
     where: eq(userSubscriptions.userId, session.sub),
@@ -66,6 +78,7 @@ export default async function SubscriptionPage({
       if (isOpenLabPlan || (userSub.daysRemaining ?? 0) > 0) {
         hasActiveSubscription = true;
         isOpenLab = isOpenLabPlan;
+        activePackageName = plan?.name ?? null;
         activeCredits = isOpenLabPlan ? 0 : (userSub.daysRemaining ?? 0);
         const exp = new Date(userSub.expirationDate);
         activeExpiration = `${exp.getDate().toString().padStart(2, '0')}/${(exp.getMonth() + 1).toString().padStart(2, '0')}/${exp.getFullYear()}`;
@@ -106,6 +119,7 @@ export default async function SubscriptionPage({
       {/* Active Subscription Warning */}
       {showActiveWarning && (
         <ActiveSubscriptionWarning
+          packageName={activePackageName}
           credits={activeCredits}
           expiration={activeExpiration}
           isOpenLab={isOpenLab}

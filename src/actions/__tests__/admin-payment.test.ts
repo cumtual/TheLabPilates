@@ -117,7 +117,8 @@ describe('Property 24: Atomic Payment Confirmation', () => {
             set: vi.fn().mockImplementation((setData: unknown) => ({
               where: vi.fn().mockImplementation(() => {
                 txOperations.push({ type: 'update', data: setData });
-                return Promise.resolve();
+                // D2: expireOtherActiveSubscriptions usa returning(); sin otras activas.
+                return Object.assign(Promise.resolve(), { returning: () => Promise.resolve([]) });
               }),
             })),
           }));

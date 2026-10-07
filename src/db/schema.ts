@@ -8,7 +8,10 @@ import {
   timestamp,
   pgEnum,
   uniqueIndex,
+  smallint,
+  time,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 // Relative import: drizzle-kit and the seed script run without the @/ alias.
 import { CLASS_TYPES } from '../lib/utils/class-type';
 
@@ -81,12 +84,29 @@ export const passwordResets = pgTable('password_resets', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
+/** 'standard' = paquetes de siempre; 'special' = con reglas por disciplina/horario. */
+export const PACKAGE_KINDS = ['standard', 'special'] as const;
+export type PackageKind = (typeof PACKAGE_KINDS)[number];
+
 export const subscriptions = pgTable('suscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name'),
   sessions: integer('sessions'),
+  // true = Open Lab (ilimitado + invitado mensual) en todo el código.
   guest: boolean('guest'),
   price: integer('price'),
+  // Paquetes especiales y catálogo — sql/manual/2026-10-07_001_special_packages.sql
+  kind: varchar('kind', { length: 16 }).$type<PackageKind>().notNull().default('standard'),
+  // NULL = 30 días (paquetes anteriores al cambio).
+  validityDays: integer('validity_days'),
+  guestCredits: integer('guest_credits').notNull().default(0),
+  shortDescription: varchar('short_description', { length: 49 }),
+  features: text('features').array().notNull().default(sql`'{}'::text[]`),
+  isFeatured: boolean('is_featured').notNull().default(false),
+  displayOrder: integer('display_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const payments = pgTable('payments', {
@@ -117,6 +137,10 @@ export const userSubscriptions = pgTable('user_suscriptions', {
   status: subscriptionStatusEnum('status').default('pending'),
   expirationDate: timestamp('expiration_date', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  // Copia al comprar (D4). NULL = comprada antes de paquetes especiales => reglas de siempre.
+  priceSnapshot: integer('price_snapshot'),
+  validityDaysSnapshot: integer('validity_days_snapshot'),
+  guestCreditsSnapshot: integer('guest_credits_snapshot'),
 });
 
 export const openClasses = pgTable('open_class', {
@@ -232,6 +256,10 @@ export const classEnrollments = pgTable(
     // Cancellation audit (admin only) — sql/manual/2026-09-24_001_enrollment_cancelled_at.sql
     // Set to now() on every transition to cancelled/late_cancelled; NULL otherwise.
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    // Grupo de créditos consumido (paquetes especiales). NULL = reembolso a days_remaining.
+    balanceId: uuid('balance_id').references(() => userSubscriptionBalances.id, {
+      onDelete: 'set null',
+    }),
   },
   (table) => ({
     uniqueEnrollment: uniqueIndex('uk_class_user_enrollment').on(
@@ -282,4 +310,37 @@ export const guestCredits = pgTable('guest_credits', {
   guestEnrollmentId: uuid('guest_enrollment_id')
     .references(() => guestEnrollments.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// Paquetes especiales — sql/manual/2026-10-07_001_special_packages.sql
+// Regla del catálogo: N créditos de [tipos de clase] en una franja opcional (hora CDMX).
+export const subscriptionRules = pgTable('subscription_rules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  subscriptionId: uuid('suscription_id')
+    .notNull()
+    .references(() => subscriptions.id, { onDelete: 'restrict' }),
+  label: varchar('label', { length: 60 }),
+  credits: integer('credits').notNull(),
+  allowedClassTypes: classTypeEnum('allowed_class_types').array().notNull(),
+  windowStart: time('window_start'),
+  windowEnd: time('window_end'),
+  sortOrder: smallint('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Copia de cada regla al comprar, con el saldo del alumno (D4).
+export const userSubscriptionBalances = pgTable('user_subscription_balances', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userSubscriptionId: uuid('user_suscription_id')
+    .notNull()
+    .references(() => userSubscriptions.id, { onDelete: 'cascade' }),
+  ruleId: uuid('rule_id').references(() => subscriptionRules.id, { onDelete: 'set null' }),
+  label: varchar('label', { length: 60 }).notNull(),
+  allowedClassTypes: classTypeEnum('allowed_class_types').array().notNull(),
+  windowStart: time('window_start'),
+  windowEnd: time('window_end'),
+  creditsTotal: integer('credits_total').notNull(),
+  creditsRemaining: integer('credits_remaining').notNull(),
+  sortOrder: smallint('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

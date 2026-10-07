@@ -82,6 +82,7 @@ function setupCancelSelectMock(options: {
                 userSubscription: {
                   id: enrollment.userSubscriptionId,
                   userId: ownerUserId,
+                  active: true,
                 },
               },
             ]),

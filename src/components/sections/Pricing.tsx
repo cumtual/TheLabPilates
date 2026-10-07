@@ -1,56 +1,14 @@
-import Link from 'next/link'
+import { getPublicPackages } from '@/lib/queries/packages'
+import { PackageCard } from './PackageCard'
+import { getPricingGridClass } from './pricing-grid'
 
-const packages = [
-  {
-    name: 'Lab Pass',
-    tagline: 'Todo comienza con un primer paso.',
-    sessions: 'UNA SESIÓN',
-    price: '95',
-    features: ['Mat Pilates', 'Barre', 'Yoga'],
-    premium: false,
-  },
-  {
-    name: 'Lab Entry',
-    tagline: 'Empieza a descubrir de lo que eres capaz.',
-    sessions: '4 SESIONES',
-    price: '360',
-    features: ['Flexibilidad de horario'],
-    premium: false,
-  },
-  {
-    name: 'Lab Practice',
-    tagline: 'La constancia construye resultados.',
-    sessions: '8 SESIONES',
-    price: '680',
-    features: ['Flexibilidad de horario'],
-    premium: false,
-  },
-  {
-    name: 'Lab Progress',
-    tagline: 'Cada movimiento te acerca a tu mejor versión.',
-    sessions: '12 SESIONES',
-    price: '960',
-    features: [
-      '-10%OFF Coffee Bar',
-      'Flexibilidad de horario'
-    ],
-    premium: false,
-  },
-  {
-    name: '∞ Open Lab',
-    tagline: 'Haz del movimiento parte de tu vida.',
-    sessions: 'ACCESO ILIMITADO',
-    price: '1,850',
-    features: [
-      '-10%OFF Coffee Bar',
-      '1 Invitado mensual',
-      '1er Kit de regalo',
-    ],
-    premium: true,
-  },
-]
+/**
+ * Paquetes de la landing, leídos del catálogo (SPEC-SPECIAL-PACKAGES §9, D7): solo los
+ * activos y no eliminados. El admin los edita en /admin/packages, que revalida `/`.
+ */
+export default async function Pricing() {
+  const packages = await getPublicPackages()
 
-export default function Pricing() {
   return (
     <section className="py-section-gap bg-surface-cream" id="paquetes">
       <div className="max-w-7xl mx-auto px-[24px]">
@@ -69,93 +27,17 @@ export default function Pricing() {
         </div>
 
         {/* Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-          {packages.map((pkg) => (
-            <div
-              key={pkg.name}
-              className={
-                pkg.premium
-                  ? 'bg-warm-wood p-8 rounded-xl flex flex-col justify-between shadow-2xl scale-105 z-10 my-4'
-                  : 'bg-surface p-8 rounded-xl flex flex-col justify-between hover:shadow-xl hover:-translate-y-1 transition-all duration-500'
-              }
-            >
-              <div>
-                {pkg.premium ? (
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-headline text-2xl text-plaster-white">
-                      {pkg.name}
-                    </h3>
-                    <span className="bg-plaster-white/20 px-3 py-1 rounded-full text-[10px] text-plaster-white font-semibold tracking-widest uppercase">
-                      PREMIUM
-                    </span>
-                  </div>
-                ) : (
-                  <h3 className="font-headline text-2xl mb-2">{pkg.name}</h3>
-                )}
-
-                <p
-                  className={`text-sm italic mb-4 leading-relaxed ${
-                    pkg.premium ? 'text-plaster-white/90 mb-8' : 'text-on-surface-variant/80'
-                  }`}
-                >
-                  {pkg.tagline}
-                </p>
-
-                {pkg.premium ? (
-                  <div className="mb-8">
-                    <p className="text-[11px] font-semibold text-plaster-white/70 tracking-widest mb-2 uppercase">
-                      {pkg.sessions}
-                    </p>
-                    <p className="font-headline text-[40px] text-plaster-white">
-                      <span className="font-body">$</span>
-                      {pkg.price}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-[11px] font-semibold text-primary tracking-widest mb-6">
-                      {pkg.sessions}
-                    </p>
-                    <p className="font-headline text-[40px] mb-8">
-                      <span className="font-body">$</span>
-                      {pkg.price}
-                    </p>
-                  </>
-                )}
-
-                {pkg.features.length > 0 && (
-                  <ul
-                    className={`space-y-4 mb-10 text-sm ${
-                      pkg.premium
-                        ? 'text-plaster-white/90 space-y-5 mb-12'
-                        : 'text-on-surface-variant'
-                    }`}
-                  >
-                    {pkg.features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[16px]">
-                          {pkg.premium ? 'all_inclusive' : 'check'}
-                        </span>
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <Link
-                href="login"
-                className={
-                  pkg.premium
-                    ? 'w-full py-5 bg-plaster-white text-warm-wood text-[12px] font-semibold tracking-widest hover:bg-soft-charcoal hover:text-white transition-all shadow-lg uppercase cursor-pointer text-center block'
-                    : 'w-full py-4 border border-outline text-soft-charcoal text-[12px] font-semibold tracking-widest hover:bg-soft-charcoal hover:text-white transition-all uppercase cursor-pointer text-center block'
-                }
-              >
-                {pkg.premium ? 'RESERVAR TODO' : 'ELEGIR'}
-              </Link>
-            </div>
-          ))}
-        </div>
+        {packages.length > 0 ? (
+          <div className={getPricingGridClass(packages.length)}>
+            {packages.map((pkg) => (
+              <PackageCard key={pkg.id} pkg={pkg} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-[16px] text-on-surface-variant">
+            Pronto anunciaremos nuestros paquetes.
+          </p>
+        )}
       </div>
     </section>
   )

@@ -44,10 +44,12 @@ vi.mock('@/lib/guest/eligibility', () => ({
   isUserOpenLabEligible: vi.fn(),
 }));
 
-vi.mock('@/lib/guest/credits', () => ({
+vi.mock('@/lib/guest/credits', async (importOriginal) => ({
   getGuestCreditsForCycle: vi.fn(),
   consumeGuestCredit: vi.fn(),
   restoreGuestCredit: vi.fn(),
+  // Consumo dentro de la transacción: se ejecuta real sobre el `tx` simulado.
+  consumeGuestCreditInTx: (await importOriginal<typeof import('@/lib/guest/credits')>()).consumeGuestCreditInTx,
 }));
 
 import { cancelReservationAction, confirmLateCancellationAction } from '../enrollment';
@@ -80,6 +82,7 @@ function setupEnrollmentSelectMock(options: {
                 userSubscription: {
                   id: enrollment.userSubscriptionId,
                   userId: ownerUserId,
+                  active: true,
                 },
               },
             ]),
@@ -278,7 +281,7 @@ describe('Grace period: guest flows', () => {
     const result = await cancelGuestAction('guest-1');
 
     expect(result.success).toBe(true);
-    expect(restoreGuestCredit).toHaveBeenCalledWith(OWNER, 'sub-1');
+    expect(restoreGuestCredit).toHaveBeenCalledWith(OWNER, 'sub-1', 'guest-1');
   });
 
   it('cancelGuestAction late-cancels without refund 12 min after booking', async () => {
@@ -329,6 +332,6 @@ describe('Grace period: guest flows', () => {
 
     expect(result.success).toBe(true);
     expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(restoreGuestCredit).toHaveBeenCalledWith(OWNER, 'sub-1');
+    expect(restoreGuestCredit).toHaveBeenCalledWith(OWNER, 'sub-1', 'guest-1');
   });
 });

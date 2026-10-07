@@ -169,3 +169,37 @@ describe('ClientDashboardPage — QR check-in on the next class', () => {
     expect(screen.queryByRole('button', { name: 'Ver mi código QR' })).toBeNull();
   });
 });
+
+describe('ClientDashboardPage — paquete especial (SPEC-SPECIAL-PACKAGES §8.1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sub: 'user-uuid', role: 'client', email: 'client@test.com' });
+    mockedNextClass.mockResolvedValue(null);
+  });
+
+  it('muestra el desglose de créditos por disciplina', async () => {
+    (db.select as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(
+        makeChain([
+          {
+            userSub: { id: 'sub-1', active: true, status: 'active', daysRemaining: 1, guestCreditsSnapshot: 0, expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+            payment: { confirmed: true },
+            subscription: { guest: false, kind: 'special', name: 'Reset Pass' },
+          },
+        ])
+      )
+      .mockReturnValueOnce(
+        makeChain([
+          { id: 'A', label: 'Yoga', allowedClassTypes: ['yoga'], windowStart: null, windowEnd: null, creditsRemaining: 1, creditsTotal: 1, sortOrder: 0 },
+          { id: 'B', label: 'Mat Pilates / Barre', allowedClassTypes: ['mat_pilates', 'barre'], windowStart: null, windowEnd: null, creditsRemaining: 0, creditsTotal: 1, sortOrder: 1 },
+        ])
+      );
+
+    render(await ClientDashboardPage());
+
+    expect(screen.getByRole('heading', { name: 'Tus créditos' })).toBeInTheDocument();
+    expect(screen.getByText('1 clase de Yoga')).toBeInTheDocument();
+    expect(screen.getByText('0 de 1 · Mat Pilates / Barre')).toBeInTheDocument();
+    expect(screen.getByText('Te queda 1 clase')).toBeInTheDocument();
+  });
+});

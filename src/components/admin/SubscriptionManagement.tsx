@@ -13,6 +13,7 @@ import {
   decrementSubscriptionCreditAction,
   getSubscriptionEnrollmentsAction,
 } from '@/actions/admin';
+import type { CreditBalanceView } from '@/lib/subscription/package-view';
 
 interface SubscriptionItem {
   subscriptionId: string;
@@ -25,7 +26,13 @@ interface SubscriptionItem {
   active: boolean;
   status: 'pending' | 'active' | 'suspended' | 'expired' | null;
   isOpenLab: boolean;
+  /** Paquetes especiales: créditos por grupo (SPEC-SPECIAL-PACKAGES D5). */
+  balances?: CreditBalanceView[];
 }
+
+type CreditAdjustment = { kind: 'refund' | 'decrement'; subscriptionId: string; balances: CreditBalanceView[] };
+
+const SELECT_GROUP_ERROR = 'Selecciona el grupo de créditos.';
 
 type StatusFilter = 'all' | 'active' | 'suspended' | 'expired';
 
@@ -83,6 +90,39 @@ export function SubscriptionManagement({
 
   // Track local credit balance for optimistic UI
   const [localCreditsState, setLocalCreditsState] = useState<Record<string, number>>({});
+
+  // Special packages: the admin picks the credit group to adjust (D5)
+  const [adjustment, setAdjustment] = useState<CreditAdjustment | null>(null);
+  const [selectedBalanceId, setSelectedBalanceId] = useState('');
+  const [localBalancesState, setLocalBalancesState] = useState<Record<string, CreditBalanceView[]>>({});
+
+  function balancesOf(sub: SubscriptionItem): CreditBalanceView[] | undefined {
+    return localBalancesState[sub.subscriptionId] ?? sub.balances;
+  }
+
+  function openAdjustment(kind: CreditAdjustment['kind'], sub: SubscriptionItem) {
+    const balances = balancesOf(sub);
+    setSelectedBalanceId('');
+    setAdjustment(balances?.length ? { kind, subscriptionId: sub.subscriptionId, balances } : null);
+  }
+
+  /** Para especiales exige el grupo; devuelve `false` si falta (el modal sigue abierto). */
+  function requireGroup(): boolean {
+    if (adjustment && !selectedBalanceId) {
+      setError(SELECT_GROUP_ERROR);
+      return false;
+    }
+    return true;
+  }
+
+  function applyLocalGroupDelta(subscriptionId: string, balanceId: string, delta: 1 | -1, balances: CreditBalanceView[]) {
+    setLocalBalancesState((prev) => ({
+      ...prev,
+      [subscriptionId]: balances.map((b) =>
+        b.balanceId === balanceId ? { ...b, remaining: b.remaining + delta, exhausted: b.remaining + delta <= 0 } : b
+      ),
+    }));
+  }
 
   // Search state with debounce
   const [searchInput, setSearchInput] = useState(currentSearch);
@@ -204,14 +244,19 @@ export function SubscriptionManagement({
     if (!confirmRefundUserId) return;
     setError(null);
     setSuccessMessage(null);
+    if (!requireGroup()) return;
     setPendingAction(`refund-${confirmRefundUserId}`);
     const userId = confirmRefundUserId;
+    const target = adjustment;
+    const balanceId = selectedBalanceId || undefined;
     setConfirmRefundUserId(null);
     setConfirmRefundName('');
+    setAdjustment(null);
 
     startTransition(async () => {
-      const result = await refundSessionCreditAction(userId);
+      const result = await refundSessionCreditAction(userId, balanceId);
       if (result.success) {
+        if (target && balanceId) applyLocalGroupDelta(target.subscriptionId, balanceId, 1, target.balances);
         setSuccessMessage(result.message ?? 'Crédito otorgado.');
       } else {
         setError(result.error);
@@ -224,15 +269,20 @@ export function SubscriptionManagement({
     if (!confirmDecrementId) return;
     setError(null);
     setSuccessMessage(null);
+    if (!requireGroup()) return;
     const id = confirmDecrementId;
+    const target = adjustment;
+    const balanceId = selectedBalanceId || undefined;
     setPendingAction(`decrement-${id}`);
     setConfirmDecrementId(null);
     setConfirmDecrementName('');
     setConfirmDecrementCredits(0);
+    setAdjustment(null);
 
     startTransition(async () => {
-      const result = await decrementSubscriptionCreditAction(id);
+      const result = await decrementSubscriptionCreditAction(id, balanceId);
       if (result.success) {
+        if (target && balanceId) applyLocalGroupDelta(target.subscriptionId, balanceId, -1, target.balances);
         const data = result.data as
           | { daysRemaining?: number; expired?: boolean }
           | undefined;
@@ -410,6 +460,19 @@ export function SubscriptionManagement({
                         </span>
                       )}
                     </div>
+                    {balancesOf(sub)?.length ? (
+                      <ul aria-label={`Créditos por grupo de ${sub.clientName}`} className="mt-1 space-y-0.5">
+                        {balancesOf(sub)!.map((balance) => (
+                          <li
+                            key={balance.balanceId}
+                            className={`font-body text-xs ${balance.exhausted ? 'text-outline line-through' : 'text-on-surface-variant'}`}
+                          >
+                            {balance.label}: {balance.remaining}/{balance.total}
+                            {balance.timeWindow ? ` · ${balance.timeWindow}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -430,6 +493,7 @@ export function SubscriptionManagement({
                           onClick={() => {
                             setConfirmRefundUserId(sub.userId);
                             setConfirmRefundName(sub.clientName);
+                            openAdjustment('refund', sub);
                           }}
                           disabled={isPending && pendingAction === `refund-${sub.userId}`}
                           className="inline-flex items-center justify-center px-4 py-3 font-body text-sm font-semibold uppercase tracking-wider bg-primary text-on-primary rounded-lg transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed min-h-11 min-w-11"
@@ -444,6 +508,7 @@ export function SubscriptionManagement({
                             onClick={() => {
                               setConfirmDecrementId(sub.subscriptionId);
                               setConfirmDecrementName(sub.clientName);
+                              openAdjustment('decrement', sub);
                               setConfirmDecrementCredits(
                                 localCreditsState[sub.subscriptionId] ?? sub.daysRemaining ?? 0
                               );
@@ -572,6 +637,9 @@ export function SubscriptionManagement({
         <p className="mt-2 text-sm text-on-surface-variant">
           Se incrementará en 1 el número de sesiones disponibles en la suscripción activa del usuario.
         </p>
+        {adjustment?.kind === 'refund' && (
+          <GroupPicker adjustment={adjustment} selected={selectedBalanceId} onSelect={setSelectedBalanceId} />
+        )}
       </Modal>
 
       {/* Decrement Confirmation Modal */}
@@ -595,7 +663,44 @@ export function SubscriptionManagement({
             Al llegar a 0 la suscripción se marcará como vencida.
           </p>
         )}
+        {adjustment?.kind === 'decrement' && (
+          <GroupPicker adjustment={adjustment} selected={selectedBalanceId} onSelect={setSelectedBalanceId} />
+        )}
       </Modal>
     </div>
+  );
+}
+
+/** Selector del grupo a ajustar; deshabilita los grupos llenos (+1) o vacíos (−1). */
+function GroupPicker({
+  adjustment,
+  selected,
+  onSelect,
+}: {
+  adjustment: CreditAdjustment;
+  selected: string;
+  onSelect: (balanceId: string) => void;
+}) {
+  return (
+    <fieldset className="mt-4 space-y-2">
+      <legend className="font-body text-sm font-semibold text-on-surface">Grupo de créditos</legend>
+      {adjustment.balances.map((balance) => {
+        const disabled = adjustment.kind === 'refund' ? balance.remaining >= balance.total : balance.remaining <= 0;
+        return (
+          <label key={balance.balanceId} className={`flex items-center gap-2 min-h-11 font-body text-sm ${disabled ? 'opacity-50' : ''}`}>
+            <input
+              type="radio"
+              name="credit-group"
+              value={balance.balanceId}
+              checked={selected === balance.balanceId}
+              disabled={disabled}
+              onChange={() => onSelect(balance.balanceId)}
+              className="accent-primary"
+            />
+            {balance.label} ({balance.remaining}/{balance.total})
+          </label>
+        );
+      })}
+    </fieldset>
   );
 }

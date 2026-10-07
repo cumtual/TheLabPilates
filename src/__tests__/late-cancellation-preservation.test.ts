@@ -100,7 +100,7 @@ function setupCancelSelectMock(options: {
             where: vi.fn().mockResolvedValue([
               {
                 enrollment,
-                userSubscription: { id: enrollment.userSubscriptionId, userId: ownerUserId },
+                userSubscription: { id: enrollment.userSubscriptionId, userId: ownerUserId, active: true },
               },
             ]),
           }),

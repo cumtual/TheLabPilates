@@ -9,16 +9,61 @@ import {
   guestEnrollments,
   guestCredits,
   userSubscriptions,
+  userSubscriptionBalances,
 } from '@/db/schema';
 import { getSession } from '@/lib/auth/session';
 import { isUserOpenLabEligible } from '@/lib/guest/eligibility';
-import { getGuestCreditsForCycle, consumeGuestCredit, restoreGuestCredit } from '@/lib/guest/credits';
+import { getGuestCreditsForCycle, consumeGuestCreditInTx, restoreGuestCredit } from '@/lib/guest/credits';
+import { BookingRejectionError, consumeClassCredit, restoreEnrollmentCredit } from '@/lib/subscription/credits';
+import { explainRejection } from '@/lib/subscription/rules';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import { isWithinGracePeriod } from '@/lib/utils/date';
 import { generateCheckinToken } from '@/lib/checkin/token';
 import type { GuestEligibilityResult } from '@/lib/types/guest';
 import type { ActionResult } from '@/lib/types';
 import { buildEnrollmentCancellationPatch, buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Timely titular cancellation inside a reservation with guest. Open Lab titulars carry no
+ * credit (`balance_id` NULL). A special-package titular gets its credit group back, guarded
+ * by `status = 'pending'` so a repeated request never refunds twice.
+ */
+async function cancelTitularAndRestoreCredit(
+  tx: Tx,
+  enrollment: { id: string; userSubscriptionId: string; balanceId?: string | null },
+  subscriptionActive: boolean
+): Promise<void> {
+  if (!enrollment.balanceId) {
+    await tx
+      .update(classEnrollments)
+      .set(buildEnrollmentCancellationPatch('cancelled'))
+      .where(eq(classEnrollments.id, enrollment.id));
+    return;
+  }
+
+  const cancelled = await tx
+    .update(classEnrollments)
+    .set(buildEnrollmentCancellationPatch('cancelled'))
+    .where(and(eq(classEnrollments.id, enrollment.id), eq(classEnrollments.status, 'pending')))
+    .returning({ id: classEnrollments.id });
+  if (cancelled.length === 0) return;
+
+  await restoreEnrollmentCredit(tx, {
+    userSubscriptionId: enrollment.userSubscriptionId,
+    balanceId: enrollment.balanceId,
+    isOpenLab: false,
+    subscriptionActive,
+  });
+}
+
+/** Open Lab: 1 pase por ciclo. Paquetes especiales: varios pases para toda la vigencia. */
+function noGuestPassesLeft(total: number): string {
+  return total > 1
+    ? 'Ya usaste todos los pases de invitado de tu paquete.'
+    : 'Ya utilizaste tu crédito de invitado en este ciclo.';
+}
 
 /**
  * Server action to check if the current authenticated user is eligible
@@ -62,14 +107,15 @@ export async function checkGuestEligibilityAction(): Promise<GuestEligibilityRes
     // Step 3: Check guest credits for the current billing cycle
     const creditsAvailable = await getGuestCreditsForCycle(
       session.sub,
-      eligibility.userSubscription.id
+      eligibility.userSubscription.id,
+      eligibility.guestCreditsTotal ?? 1
     );
 
     if (creditsAvailable <= 0) {
       return {
         eligible: false,
         creditsAvailable: 0,
-        reason: 'Ya utilizaste tu crédito de invitado en este ciclo.',
+        reason: noGuestPassesLeft(eligibility.guestCreditsTotal ?? 1),
       };
     }
 
@@ -150,13 +196,22 @@ export async function enrollWithGuestAction(
   }
 
   const userSubscriptionId = eligibility.userSubscription.id;
+  const guestCreditsTotal = eligibility.guestCreditsTotal ?? 1;
+  // Only Open Lab and special packages include guests: anything that is not special is Open Lab.
+  const kind = eligibility.subscription?.kind === 'special' ? 'special' : 'standard';
+  const membership = {
+    userSubscriptionId,
+    kind,
+    isOpenLab: kind !== 'special',
+    packageName: eligibility.subscription?.name ?? 'paquete',
+  } as const;
 
   // Step 4: Check guest credit availability
-  const creditsAvailable = await getGuestCreditsForCycle(session.sub, userSubscriptionId);
+  const creditsAvailable = await getGuestCreditsForCycle(session.sub, userSubscriptionId, guestCreditsTotal);
   if (creditsAvailable <= 0) {
     return {
       success: false,
-      error: 'Ya utilizaste tu crédito de invitado en este ciclo.',
+      error: noGuestPassesLeft(guestCreditsTotal),
     };
   }
 
@@ -175,6 +230,20 @@ export async function enrollWithGuestAction(
 
   if (openClass.classDate && new Date(openClass.classDate) < new Date()) {
     return { success: false, error: 'Esta clase ya pasó.' };
+  }
+
+  // Special packages: the titular needs a credit group valid for this class (SPEC §5.7).
+  if (membership.kind === 'special' && openClass.classDate) {
+    const balances = await db
+      .select()
+      .from(userSubscriptionBalances)
+      .where(eq(userSubscriptionBalances.userSubscriptionId, userSubscriptionId));
+    const rejection = explainRejection(
+      balances,
+      { classType: openClass.classType, classDate: openClass.classDate },
+      membership.packageName
+    );
+    if (rejection) return { success: false, error: rejection.message };
   }
 
   // Step 6: Check capacity >= 2 (needs 2 spots: titular + guest)
@@ -240,12 +309,19 @@ export async function enrollWithGuestAction(
         throw new Error('NO_CAPACITY');
       }
 
-      // Insert titular enrollment (no days_remaining decrement for Open Lab)
+      // Titular credit: none for Open Lab; a credit group for special packages.
+      const balanceId = await consumeClassCredit(tx, membership, {
+        classType: openClass.classType,
+        classDate: openClass.classDate ?? new Date(),
+      });
+
+      // Insert titular enrollment
       await tx.insert(classEnrollments).values({
         openClassId: classId,
         userSubscriptionId: userSubscriptionId,
         status: 'pending',
         checkinToken: generateCheckinToken(),
+        ...(balanceId ? { balanceId } : {}),
       });
 
       // Insert guest enrollment
@@ -261,31 +337,17 @@ export async function enrollWithGuestAction(
         .returning({ id: guestEnrollments.id });
 
       // Consume guest credit atomically within the transaction
-      // (consumeGuestCredit uses its own transaction, so we replicate the logic here)
-      const [existingCredit] = await tx
-        .select()
-        .from(guestCredits)
-        .where(
-          and(
-            eq(guestCredits.userId, session.sub),
-            eq(guestCredits.userSubscriptionId, userSubscriptionId)
-          )
-        );
-
-      if (existingCredit) {
-        if (existingCredit.creditsUsed >= 1) {
-          throw new Error('NO_CREDITS');
-        }
-        await tx.execute(
-          sql`UPDATE guest_credits SET credits_used = 1, guest_enrollment_id = ${insertedGuest.id} WHERE id = ${existingCredit.id} AND credits_used = 0`
-        );
-      } else {
-        await tx.execute(
-          sql`INSERT INTO guest_credits (user_id, user_subscription_id, credits_used, guest_enrollment_id) VALUES (${session.sub}, ${userSubscriptionId}, 1, ${insertedGuest.id})`
-        );
-      }
+      await consumeGuestCreditInTx(tx, {
+        userId: session.sub,
+        userSubscriptionId,
+        guestEnrollmentId: insertedGuest.id,
+        total: guestCreditsTotal,
+      });
     });
   } catch (error) {
+    if (error instanceof BookingRejectionError) {
+      return { success: false, error: error.message };
+    }
     if (error instanceof Error) {
       if (error.message === 'NO_CAPACITY') {
         return {
@@ -296,7 +358,7 @@ export async function enrollWithGuestAction(
       if (error.message === 'NO_CREDITS') {
         return {
           success: false,
-          error: 'Ya utilizaste tu crédito de invitado en este ciclo.',
+          error: noGuestPassesLeft(guestCreditsTotal),
         };
       }
     }
@@ -426,13 +488,14 @@ export async function addGuestToReservationAction(
     }
 
     const userSubscriptionId = eligibility.userSubscription.id;
+    const guestCreditsTotal = eligibility.guestCreditsTotal ?? 1;
 
-    const creditsAvailable = await getGuestCreditsForCycle(session.sub, userSubscriptionId);
+    const creditsAvailable = await getGuestCreditsForCycle(session.sub, userSubscriptionId, guestCreditsTotal);
 
     if (creditsAvailable <= 0) {
       return {
         success: false,
-        error: 'Ya utilizaste tu crédito de invitado en este ciclo.',
+        error: noGuestPassesLeft(guestCreditsTotal),
       };
     }
 
@@ -479,16 +542,20 @@ export async function addGuestToReservationAction(
         throw new Error('NO_CAPACITY');
       }
 
-      // Re-check credits atomically
-      const [existingCredit] = await tx
-        .select()
-        .from(guestCredits)
-        .where(
-          and(
-            eq(guestCredits.userId, session.sub),
-            eq(guestCredits.userSubscriptionId, userSubscriptionId)
-          )
-        );
+      // Re-check credits atomically (single-pass Open Lab cycle). Packages with several
+      // passes are counted under the subscription lock by consumeGuestCreditInTx.
+      const [existingCredit] =
+        guestCreditsTotal > 1
+          ? []
+          : await tx
+              .select()
+              .from(guestCredits)
+              .where(
+                and(
+                  eq(guestCredits.userId, session.sub),
+                  eq(guestCredits.userSubscriptionId, userSubscriptionId)
+                )
+              );
 
       if (existingCredit && existingCredit.creditsUsed >= 1) {
         throw new Error('NO_CREDITS');
@@ -507,7 +574,14 @@ export async function addGuestToReservationAction(
         .returning({ id: guestEnrollments.id });
 
       // Consume guest credit within the transaction
-      if (existingCredit) {
+      if (guestCreditsTotal > 1) {
+        await consumeGuestCreditInTx(tx, {
+          userId: session.sub,
+          userSubscriptionId,
+          guestEnrollmentId: insertedGuest.id,
+          total: guestCreditsTotal,
+        });
+      } else if (existingCredit) {
         await tx.execute(
           sql`UPDATE guest_credits SET credits_used = 1, guest_enrollment_id = ${insertedGuest.id} WHERE id = ${existingCredit.id} AND credits_used = 0`
         );
@@ -635,7 +709,7 @@ export async function cancelGuestAction(
         });
 
         // Restore guest credit (outside transaction since restoreGuestCredit handles its own)
-        await restoreGuestCredit(session.sub, eligibility.userSubscription.id);
+        await restoreGuestCredit(session.sub, eligibility.userSubscription.id, guestEnrollmentId);
       }
     } catch {
       return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
@@ -710,7 +784,7 @@ export async function confirmLateCancelGuestAction(
 
       const eligibility = await isUserOpenLabEligible(session.sub);
       if (eligibility.eligible && eligibility.userSubscription) {
-        await restoreGuestCredit(session.sub, eligibility.userSubscription.id);
+        await restoreGuestCredit(session.sub, eligibility.userSubscription.id, guestEnrollmentId);
       }
     } catch {
       return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
@@ -831,11 +905,8 @@ export async function cancelReservationWithGuestAction(
     // Timely cancellation: cancel both + restore credit
     try {
       await db.transaction(async (tx) => {
-        // Cancel the titular enrollment
-        await tx
-          .update(classEnrollments)
-          .set(buildEnrollmentCancellationPatch('cancelled'))
-          .where(eq(classEnrollments.id, enrollmentId));
+        // Cancel the titular enrollment (special packages: credit back to its group)
+        await cancelTitularAndRestoreCredit(tx, enrollment, enrollmentRow.userSubscription.active === true);
 
         // Cancel the guest enrollment
         await tx
@@ -851,7 +922,7 @@ export async function cancelReservationWithGuestAction(
       });
 
       if (userSub) {
-        await restoreGuestCredit(session.sub, userSub.id);
+        await restoreGuestCredit(session.sub, userSub.id, activeGuest.id);
       }
     } catch {
       return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
@@ -940,10 +1011,7 @@ export async function confirmLateCancelBothAction(
   if (isWithinGracePeriod(enrollment.createdAt)) {
     try {
       await db.transaction(async (tx) => {
-        await tx
-          .update(classEnrollments)
-          .set(buildEnrollmentCancellationPatch('cancelled'))
-          .where(eq(classEnrollments.id, enrollmentId));
+        await cancelTitularAndRestoreCredit(tx, enrollment, enrollmentRow.userSubscription.active === true);
 
         await tx
           .update(guestEnrollments)
@@ -951,7 +1019,7 @@ export async function confirmLateCancelBothAction(
           .where(eq(guestEnrollments.id, activeGuest.id));
       });
 
-      await restoreGuestCredit(session.sub, enrollment.userSubscriptionId);
+      await restoreGuestCredit(session.sub, enrollment.userSubscriptionId, activeGuest.id);
     } catch {
       return { success: false, error: 'No se pudo completar la cancelación. Intenta de nuevo.' };
     }
