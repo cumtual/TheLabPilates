@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import type { AdminPackageView } from '@/lib/queries/packages';
+import { expectConfirmBeforeAction } from '@/test-utils/confirm';
 
 /** Formulario de paquete (SPEC-SPECIAL-PACKAGES §7.3): límites de 49 caracteres y 4 beneficios. */
 
@@ -13,6 +14,7 @@ import { PackageForm } from '../PackageForm';
 import { createPackageAction, updatePackageAction } from '@/actions/admin-packages';
 
 const type = (label: RegExp | string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+const confirmSave = () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Sí, guardar' }));
 
 function fillStandard() {
   type(/^Nombre/, 'Lab Entry');
@@ -24,7 +26,7 @@ function fillStandard() {
 const existing: AdminPackageView = {
   id: 'p1', name: 'Reset Pass', displayName: 'Reset Pass', shortDescription: 'Un respiro.', sessionsLabel: '1 YOGA', priceLabel: '179', price: 179,
   features: ['Sin compromiso'], isFeatured: false, isUnlimited: false, guestBadge: null, validityLabel: 'Vigencia: 2 semanas', ctaLabel: 'ELEGIR', breakdown: [],
-  kind: 'special', isActive: true, validityDays: 14, guestCredits: 1, sessions: 1, displayOrder: 6, salesCount: 2,
+  kind: 'special', isActive: true, validityDays: 14, guestCredits: 1, sessions: 1, displayOrder: 6, barDiscountPercent: 10, salesCount: 2,
   rules: [{ label: null, credits: 1, allowedClassTypes: ['yoga'], timeWindow: { start: '07:00', end: '11:00' } }],
 };
 
@@ -75,6 +77,7 @@ describe('PackageForm — envío', () => {
     type('Beneficio 1', 'Flexibilidad de horario');
 
     fireEvent.click(screen.getByRole('button', { name: 'Crear paquete' }));
+    confirmSave();
 
     await waitFor(() => expect(createPackageAction).toHaveBeenCalledTimes(1));
     expect(createPackageAction).toHaveBeenCalledWith({
@@ -86,6 +89,7 @@ describe('PackageForm — envío', () => {
       validity: { amount: 30, unit: 'days' },
       displayOrder: 0,
       isFeatured: false,
+      barDiscountPercent: 0,
       sessions: 4,
     });
     await waitFor(() => expect(push).toHaveBeenCalledWith('/admin/packages'));
@@ -104,6 +108,7 @@ describe('PackageForm — envío', () => {
     render(<PackageForm />);
     fillStandard();
     fireEvent.click(screen.getByRole('button', { name: 'Crear paquete' }));
+    confirmSave();
     expect(await screen.findByText('Ya existe un paquete con ese nombre.')).toBeInTheDocument();
   });
 });
@@ -118,6 +123,7 @@ describe('PackageForm — edición de un especial', () => {
     expect(screen.getByText('Este paquete ya tiene 2 ventas. Los cambios aplican solo a compras nuevas.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    confirmSave();
 
     await waitFor(() => expect(updatePackageAction).toHaveBeenCalledTimes(1));
     expect(vi.mocked(updatePackageAction).mock.calls[0]).toEqual([
@@ -139,3 +145,63 @@ describe('PackageForm — edición de un especial', () => {
     expect(preview.getByText('Reset Pass Plus')).toBeInTheDocument();
   });
 });
+
+describe('PackageForm — confirmación antes de guardar (SPEC-CAFETERIA D9, TASK-CF-CONF-00)', () => {
+  it('crear: el resumen muestra nombre, precio y vigencia; no llama hasta «Sí, guardar» y cancelar no llama nada', async () => {
+    vi.mocked(createPackageAction).mockResolvedValue({ success: true, message: 'Paquete creado.', data: { id: 'new' } });
+    render(<PackageForm />);
+    fillStandard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crear paquete' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('Lab Entry');
+    expect(dialog).toHaveTextContent('$360');
+    expect(dialog).toHaveTextContent('30 días');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+
+    await expectConfirmBeforeAction({
+      trigger: () => fireEvent.click(screen.getByRole('button', { name: 'Crear paquete' })),
+      action: vi.mocked(createPackageAction),
+      confirmLabel: 'Sí, guardar',
+    });
+  });
+
+  it('editar: «Guardar cambios» también pide confirmación', async () => {
+    vi.mocked(updatePackageAction).mockResolvedValue({ success: true, message: 'Paquete actualizado.', data: { id: 'p1' } });
+    render(<PackageForm pkg={existing} />);
+    await expectConfirmBeforeAction({
+      trigger: () => fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' })),
+      action: vi.mocked(updatePackageAction),
+      confirmLabel: 'Sí, guardar',
+    });
+  });
+
+  it('con errores de validación no abre la confirmación', () => {
+    render(<PackageForm />);
+    fireEvent.click(screen.getByRole('button', { name: 'Crear paquete' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('PackageForm — descuento en la barra (SPEC-CAFETERIA D13)', () => {
+  it('muestra el valor guardado, lo envía y aparece en la confirmación', async () => {
+    vi.mocked(updatePackageAction).mockResolvedValue({ success: true, message: 'Paquete actualizado.', data: { id: 'p1' } });
+    render(<PackageForm pkg={existing} />);
+    expect(screen.getByLabelText(/Descuento en la barra/)).toHaveValue(10);
+    fireEvent.change(screen.getByLabelText(/Descuento en la barra/), { target: { value: '15' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Descuento en la barra15 %');
+    confirmSave();
+    await waitFor(() => expect(updatePackageAction).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updatePackageAction).mock.calls[0][1]).toMatchObject({ barDiscountPercent: 15 });
+  });
+
+  it('fuera de 0–100 muestra el error del esquema y no guarda', () => {
+    render(<PackageForm pkg={existing} />);
+    fireEvent.change(screen.getByLabelText(/Descuento en la barra/), { target: { value: '120' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(screen.getByText('Máximo 100 %.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+

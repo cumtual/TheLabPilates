@@ -123,3 +123,27 @@ describe('PortalNav', () => {
     });
   });
 });
+
+describe('PortalNav — cafetería (TASK-CF-ROLE-01, TASK-CF-ADM-01)', () => {
+  it('barra ve Caja, Corte y Menú, y nada más', () => {
+    render(<PortalNav role="barra" userName="Barra" />);
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(screen.getAllByText('Caja')).toHaveLength(2);
+    expect(screen.getAllByText('Corte')).toHaveLength(2);
+    expect(screen.getAllByText('Menú')).toHaveLength(2);
+    expect(hrefs).toEqual(expect.arrayContaining(['/barra', '/barra/corte', '/menu']));
+    expect(hrefs.some((h) => h?.startsWith('/admin'))).toBe(false);
+  });
+
+  it('«Cafetería» aparece solo para admin', () => {
+    const { unmount } = render(<PortalNav role="admin" userName="Admin" />);
+    expect(screen.getAllByRole('link', { name: /Cafetería/ })[0]).toHaveAttribute('href', '/admin/cafeteria');
+    unmount();
+    for (const role of ['client', 'coach', 'barra'] as const) {
+      const view = render(<PortalNav role={role} userName="X" />);
+      expect(screen.queryByText('Cafetería')).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+});
+

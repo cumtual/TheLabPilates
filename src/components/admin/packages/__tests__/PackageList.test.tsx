@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { expectConfirmBeforeAction } from '@/test-utils/confirm';
 import type { AdminPackageView } from '@/lib/queries/packages';
 
 /** Listado del catálogo (SPEC-SPECIAL-PACKAGES §7.2). */
@@ -15,7 +16,7 @@ function pkg(overrides: Partial<AdminPackageView> = {}): AdminPackageView {
   return {
     id: 'p1', name: 'Reset Pass', displayName: 'Reset Pass', shortDescription: 'Un respiro.', sessionsLabel: '1 YOGA', priceLabel: '179', price: 179,
     features: [], isFeatured: false, isUnlimited: false, guestBadge: null, validityLabel: 'Vigencia: 2 semanas', ctaLabel: 'ELEGIR', breakdown: [],
-    kind: 'special', isActive: true, validityDays: 14, guestCredits: 0, sessions: 2, displayOrder: 6, salesCount: 3, rules: [], ...overrides,
+    kind: 'special', isActive: true, validityDays: 14, guestCredits: 0, sessions: 2, displayOrder: 6, barDiscountPercent: 0, salesCount: 3, rules: [], ...overrides,
   };
 }
 
@@ -47,6 +48,7 @@ describe('PackageList', () => {
     render(<PackageList packages={[pkg()]} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Desactivar' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Sí, desactivar' }));
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Paquete desactivado.'));
     expect(setPackageActiveAction).toHaveBeenCalledWith('p1', false);
@@ -69,5 +71,33 @@ describe('PackageList', () => {
     render(<PackageList packages={[]} />);
     expect(screen.getByText('Aún no hay paquetes.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Nuevo paquete/ })).toHaveAttribute('href', '/admin/packages/new');
+  });
+});
+
+describe('PackageList — confirmación al activar o desactivar (SPEC-CAFETERIA D9, TASK-CF-CONF-00)', () => {
+  it('desactivar pide confirmación con el nombre y cancelar no llama nada', async () => {
+    vi.mocked(setPackageActiveAction).mockResolvedValue({ success: true, message: 'Paquete desactivado.', data: { id: 'p1', isActive: false } });
+    render(<PackageList packages={[pkg()]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Desactivar' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(pkg().name);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }));
+
+    await expectConfirmBeforeAction({
+      trigger: () => fireEvent.click(screen.getByRole('button', { name: 'Desactivar' })),
+      action: vi.mocked(setPackageActiveAction),
+      confirmLabel: 'Sí, desactivar',
+    });
+    expect(setPackageActiveAction).toHaveBeenCalledWith('p1', false);
+  });
+
+  it('activar pide confirmación', async () => {
+    vi.mocked(setPackageActiveAction).mockResolvedValue({ success: true, message: 'Paquete activado.', data: { id: 'p1', isActive: true } });
+    render(<PackageList packages={[pkg({ isActive: false })]} />);
+    await expectConfirmBeforeAction({
+      trigger: () => fireEvent.click(screen.getByRole('button', { name: 'Activar' })),
+      action: vi.mocked(setPackageActiveAction),
+      confirmLabel: 'Sí, activar',
+    });
+    expect(setPackageActiveAction).toHaveBeenCalledWith('p1', true);
   });
 });

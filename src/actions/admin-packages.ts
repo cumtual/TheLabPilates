@@ -53,6 +53,7 @@ function catalogValues(data: PackageData) {
     validityDays: data.validityDays,
     displayOrder: data.displayOrder,
     isFeatured: data.isFeatured,
+    barDiscountPercent: data.barDiscountPercent,
     updatedAt: new Date(),
   };
 }

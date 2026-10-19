@@ -42,7 +42,14 @@ const menuItems: Record<UserRole, MenuItem[]> = {
     { label: 'Usuarios', href: '/admin/users', icon: 'group' },
     { label: 'Suscripciones', href: '/admin/subscriptions', icon: 'card_membership' },
     { label: 'Tarjetas', href: '/admin/debit-cards', icon: 'credit_card' },
+    { label: 'Cafetería', href: '/admin/cafeteria', icon: 'local_cafe' },
     { label: 'Mi Perfil', href: '/admin/profile', icon: 'account_circle' },
+  ],
+  // SPEC-CAFETERIA §8.1: cajero y barista son el mismo rol.
+  barra: [
+    { label: 'Caja', href: '/barra', icon: 'point_of_sale' },
+    { label: 'Corte', href: '/barra/corte', icon: 'receipt_long' },
+    { label: 'Menú', href: '/menu', icon: 'menu_book' },
   ],
 };
 

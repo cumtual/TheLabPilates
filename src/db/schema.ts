@@ -10,13 +10,17 @@ import {
   uniqueIndex,
   smallint,
   time,
+  bigint,
+  char,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 // Relative import: drizzle-kit and the seed script run without the @/ alias.
 import { CLASS_TYPES } from '../lib/utils/class-type';
 
 // Enums
-export const userRoleEnum = pgEnum('user_role', ['client', 'coach', 'admin']);
+// 'barra' llega con sql/manual/2026-10-15_002_barra_role.sql (SPEC-CAFETERIA D1).
+export const userRoleEnum = pgEnum('user_role', ['client', 'coach', 'admin', 'barra']);
 export const paymentTypeEnum = pgEnum('payment_type', [
   'cash',
   'transfer',
@@ -107,6 +111,8 @@ export const subscriptions = pgTable('suscriptions', {
   isActive: boolean('is_active').notNull().default(true),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  // % de descuento en la barra con este paquete activo — sql/manual/2026-10-18_001_bar_member_discount.sql
+  barDiscountPercent: smallint('bar_discount_percent').notNull().default(0),
 });
 
 export const payments = pgTable('payments', {
@@ -277,6 +283,8 @@ export const debitCards = pgTable('debit_cards', {
   active: boolean('active').default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  // Cuenta de la barra (SPEC-CAFETERIA A6), independiente de `active` (suscripciones).
+  barActive: boolean('bar_active').notNull().default(false),
 });
 
 // Guest Management
@@ -344,3 +352,161 @@ export const userSubscriptionBalances = pgTable('user_subscription_balances', {
   sortOrder: smallint('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Cafetería / barra — sql/manual/2026-10-15_001_cafeteria.sql (SPEC-CAFETERIA §3.1).
+// Todo el dinero va en centavos enteros (*_cents). Los CHECK viven en el SQL.
+export type BarTemperature = 'cold' | 'hot';
+export type BarPaymentMethod = 'cash' | 'transfer';
+export type BarOrderStatus = 'paid' | 'voided';
+export type BarClosingStatus = 'pending' | 'approved' | 'approved_with_shortfall';
+export type BarEmailStatus = 'pending' | 'sent' | 'failed';
+export type CourtesyScope = 'any' | 'category' | 'product';
+export type CourtesySource = 'monthly' | 'grant';
+
+export const cafeteriaCategories = pgTable('cafeteria_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // NULL = categoría padre; máximo dos niveles (D10).
+  parentId: uuid('parent_id').references((): AnyPgColumn => cafeteriaCategories.id, { onDelete: 'restrict' }),
+  name: varchar('name', { length: 60 }).notNull(),
+  // Solo en el padre; las subcategorías lo heredan (A1).
+  usesTemperature: boolean('uses_temperature').notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  // NULL = hereda; true/false = fuerza (D3).
+  courtesyEligible: boolean('courtesy_eligible'),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const cafeteriaProducts = pgTable('cafeteria_products', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  categoryId: uuid('category_id')
+    .notNull()
+    .references(() => cafeteriaCategories.id, { onDelete: 'restrict' }),
+  name: varchar('name', { length: 80 }).notNull(),
+  priceCents: integer('price_cents').notNull(),
+  temperature: varchar('temperature', { length: 4 }).$type<BarTemperature>(),
+  courtesyOverride: boolean('courtesy_override'),
+  // false = «agotado»: se ve en el menú pero no se vende.
+  isAvailable: boolean('is_available').notNull().default(true),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Una sola fila (id = 1). */
+export const cafeteriaSettings = pgTable('cafeteria_settings', {
+  id: smallint('id').primaryKey().default(1),
+  coachMonthlyCourtesy: integer('coach_monthly_courtesy').notNull().default(4),
+  closingNotifyEmails: text('closing_notify_emails')
+    .array()
+    .notNull()
+    .default(sql`ARRAY['thelabpilates77@gmail.com']`),
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const barCashClosings = pgTable('bar_cash_closings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+  status: varchar('status', { length: 24 }).$type<BarClosingStatus>().notNull().default('pending'),
+  ordersCount: integer('orders_count').notNull(),
+  cashOrdersCount: integer('cash_orders_count').notNull(),
+  transferOrdersCount: integer('transfer_orders_count').notNull(),
+  courtesyItemsCount: integer('courtesy_items_count').notNull().default(0),
+  courtesyValueCents: integer('courtesy_value_cents').notNull().default(0),
+  cashTotalCents: integer('cash_total_cents').notNull(),
+  transferTotalCents: integer('transfer_total_cents').notNull(),
+  cashDeliveredCents: integer('cash_delivered_cents').notNull(),
+  deliveryNote: text('delivery_note'),
+  resolvedBy: uuid('resolved_by').references(() => users.id),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  cashReceivedCents: integer('cash_received_cents'),
+  shortfallCents: integer('shortfall_cents'),
+  resolutionNote: text('resolution_note'),
+  createdEmailStatus: varchar('created_email_status', { length: 8 }).$type<BarEmailStatus>().notNull().default('pending'),
+  createdEmailSentAt: timestamp('created_email_sent_at', { withTimezone: true }),
+  resolvedEmailStatus: varchar('resolved_email_status', { length: 8 }).$type<BarEmailStatus>(),
+  resolvedEmailSentAt: timestamp('resolved_email_sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const barOrders = pgTable('bar_orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  folio: bigint('folio', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
+  // Evita doble cobro por doble clic o reintento.
+  requestId: uuid('request_id').notNull().unique(),
+  status: varchar('status', { length: 8 }).$type<BarOrderStatus>().notNull().default('paid'),
+  customerName: varchar('customer_name', { length: 100 }),
+  customerUserId: uuid('customer_user_id').references(() => users.id, { onDelete: 'set null' }),
+  // NULL ⇔ total 0 (100 % cortesía).
+  paymentMethod: varchar('payment_method', { length: 10 }).$type<BarPaymentMethod>(),
+  bankAccountId: uuid('bank_account_id').references(() => debitCards.id, { onDelete: 'set null' }),
+  totalCents: integer('total_cents').notNull(),
+  // Descuento por membresía (SPEC-CAFETERIA D13). subtotal NULL = pedido anterior al cambio.
+  subtotalCents: integer('subtotal_cents'),
+  discountCents: integer('discount_cents').notNull().default(0),
+  discountPercent: smallint('discount_percent').notNull().default(0),
+  discountLabel: varchar('discount_label', { length: 80 }),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  closingId: uuid('closing_id').references(() => barCashClosings.id),
+  voidedAt: timestamp('voided_at', { withTimezone: true }),
+  voidedBy: uuid('voided_by').references(() => users.id),
+  voidReason: text('void_reason'),
+});
+
+/** Cortesías regaladas por el admin (D11, A12, A13). */
+export const cafeteriaCourtesyGrants = pgTable('cafeteria_courtesy_grants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  grantedBy: uuid('granted_by')
+    .notNull()
+    .references(() => users.id),
+  quantity: smallint('quantity').notNull(),
+  scope: varchar('scope', { length: 8 }).$type<CourtesyScope>().notNull(),
+  categoryId: uuid('category_id').references(() => cafeteriaCategories.id, { onDelete: 'restrict' }),
+  productId: uuid('product_id').references(() => cafeteriaProducts.id, { onDelete: 'restrict' }),
+  scopeLabel: varchar('scope_label', { length: 140 }).notNull(),
+  note: text('note'),
+  // Fin del día elegido en CDMX; NULL = sin vencimiento.
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  revokedBy: uuid('revoked_by').references(() => users.id),
+  revokeReason: text('revoke_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const barOrderItems = pgTable('bar_order_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id')
+    .notNull()
+    .references(() => barOrders.id, { onDelete: 'cascade' }),
+  productId: uuid('product_id').references(() => cafeteriaProducts.id, { onDelete: 'set null' }),
+  // Copias al vender: editar el menú no cambia ventas pasadas.
+  productName: varchar('product_name', { length: 80 }).notNull(),
+  categoryName: varchar('category_name', { length: 60 }).notNull(),
+  parentCategoryName: varchar('parent_category_name', { length: 60 }),
+  temperature: varchar('temperature', { length: 4 }).$type<BarTemperature>(),
+  unitPriceCents: integer('unit_price_cents').notNull(),
+  quantity: smallint('quantity').notNull(),
+  isCourtesy: boolean('is_courtesy').notNull().default(false),
+  courtesyUserId: uuid('courtesy_user_id').references(() => users.id),
+  courtesySource: varchar('courtesy_source', { length: 7 }).$type<CourtesySource>(),
+  // 'YYYY-MM' en CDMX (solo cupo mensual).
+  courtesyPeriod: char('courtesy_period', { length: 7 }),
+  courtesyGrantId: uuid('courtesy_grant_id').references(() => cafeteriaCourtesyGrants.id),
+  lineTotalCents: integer('line_total_cents').notNull(),
+});
+

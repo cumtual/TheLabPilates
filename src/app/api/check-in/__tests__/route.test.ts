@@ -31,7 +31,7 @@ import {
 
 const mockedGetSession = getSession as ReturnType<typeof vi.fn>;
 
-function session(role: 'client' | 'coach' | 'admin', sub = role === 'admin' ? ADMIN_ID : COACH_ID) {
+function session(role: 'client' | 'coach' | 'admin' | 'barra', sub = role === 'admin' ? ADMIN_ID : COACH_ID) {
   mockedGetSession.mockResolvedValue({ sub, role, email: `${role}@test.com` });
 }
 
@@ -69,6 +69,15 @@ describe('POST /api/check-in', () => {
   it('rol client → 403 FORBIDDEN_ROLE sin tocar la reserva', async () => {
     const store = useStore();
     session('client', 'client-id');
+    const res = await POST(request({ token: VALID_TOKEN }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe('FORBIDDEN_ROLE');
+    expect(store.enrollments[0].status).toBe('pending');
+  });
+
+  it('rol barra → 403 FORBIDDEN_ROLE (TASK-CF-ROLE-01)', async () => {
+    const store = useStore();
+    session('barra', 'barra-id');
     const res = await POST(request({ token: VALID_TOKEN }));
     expect(res.status).toBe(403);
     expect((await res.json()).error.code).toBe('FORBIDDEN_ROLE');

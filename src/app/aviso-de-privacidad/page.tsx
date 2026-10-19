@@ -12,7 +12,7 @@ export default function PrivacyPage() {
     <LegalShell
       title="Aviso de Privacidad"
       subtitle="Emitido en cumplimiento de la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP) y su Reglamento."
-      lastUpdated="12 de septiembre de 2026"
+      lastUpdated="15 de octubre de 2026"
     >
       <LegalSection title="1. Identidad y domicilio del responsable">
         <p>
@@ -65,6 +65,13 @@ export default function PrivacyPage() {
             con acompañante. Usted declara contar con el consentimiento de dicha persona para
             compartir sus datos.
           </li>
+          <li>
+            <strong className="text-soft-charcoal">Consumos en la cafetería:</strong> los
+            productos que compra en la barra del Estudio, la fecha, el monto y el método de
+            pago; si se identifica como usuario registrado, el pedido queda asociado a su
+            cuenta junto con las cortesías que utilice. Si da solo un nombre para su pedido,
+            se guarda ese nombre.
+          </li>
         </ul>
         <p>
           No recabamos datos personales sensibles en términos del artículo 3, fracción VI de
@@ -83,6 +90,7 @@ export default function PrivacyPage() {
           <li>Gestión de membresías y paquetes de créditos.</li>
           <li>Reserva de clases presenciales y control de aforo/cupos.</li>
           <li>Procesamiento, registro y confirmación de pagos.</li>
+          <li>Venta en la cafetería, corte de caja y control de cortesías.</li>
           <li>Atención de solicitudes y ejercicio de derechos.</li>
         </ul>
         <p>

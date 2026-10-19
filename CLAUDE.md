@@ -39,7 +39,9 @@ src/
 │   ├── (portal)/               # authenticated area, one segment per role
 │   │   ├── admin/              # attendance, classes, debit-cards, events, payments, profile, subscriptions, users
 │   │   ├── coach/              # attendance, classes, profile
-│   │   └── client/             # classes, events, reservations, subscription, profile
+│   │   ├── client/             # classes, events, reservations, subscription, profile
+│   │   └── barra/              # caja (register) and corte (cash closing) — role `barra`
+│   ├── menu/                   # public cafeteria menu (cached)
 │   ├── api/cron/complete-classes, api/waitlist
 │   └── aviso-de-privacidad, terminos-y-condiciones, soon   # public/legal
 ├── actions/                    # Server Actions (business logic entry points)
@@ -48,6 +50,7 @@ src/
 │   ├── admin/ | coach/ | client/   # role-specific UI
 │   ├── ui/, layout/, sections/     # shared UI, layout, landing-page sections
 │   └── auth/, profile/, legal/
+├── modules/cafeteria/          # Clean Architecture pilot: domain → application → infrastructure → presentation
 ├── db/                         # schema.ts (tables + enums), relations.ts, index.ts (client), seed.ts
 ├── lib/
 │   ├── auth/                   # jwt, session, password, rate-limiter
@@ -65,8 +68,9 @@ Tests live next to code in `__tests__/` folders.
 ### Key schema (`src/db/schema.ts`)
 - Tables: `users`, `password_resets`, `suscriptions` (plan catalog — note spelling), `user_suscriptions`, `payments`, `open_class` (classes), `class_enrollments`, `special_events`, `special_event_discounts`, `special_event_registrations`, `debit_cards`, `guest_enrollments`, `guest_credits`.
 - Special packages (`SPEC-SPECIAL-PACKAGES.md`): `subscription_rules` (catalog groups: N credits of [class types] in an optional CDMX time window) and `user_subscription_balances` (per-purchase copy of each rule with `credits_remaining`). `class_enrolleds.balance_id` records which group a booking consumed.
+- Cafetería (`SPEC-CAFETERIA.md`, `sql/manual/2026-10-15_001_cafeteria.sql`): `cafeteria_categories` (two levels via `parent_id`), `cafeteria_products`, `cafeteria_settings` (single row), `bar_orders`, `bar_order_items`, `bar_cash_closings`, `cafeteria_courtesy_grants`; `debit_cards.bar_active`.
 - Enums:
-  - `user_role`: client | coach | admin
+  - `user_role`: client | coach | admin | barra
   - `subscription_status`: pending | active | suspended | expired
   - `class_status`: scheduled | cancelled | completed
   - `class_type`: yoga | mat_pilates | barre | personalizada | sculpt (source of truth: `CLASS_TYPES` in `src/lib/utils/class-type.ts`)
@@ -110,12 +114,25 @@ Tests live next to code in `__tests__/` folders.
   - **Admin:** full control, cancels classes, approves payments, manages the package catalog.
   - **Coach:** may edit capacity and date/time **only of their own assigned classes**. **Must not cancel classes.** May create every class type **except `personalizada`** (custom name), which is admin-only. Server actions validate with `canRoleCreateClassType`; forms use `getClassTypeOptions(role)` from `src/lib/utils/class-type.ts`.
   - **Client:** books classes; sees bank-transfer details only when they have pending payments.
+  - **Barra:** cashier and barista (one role). Portal `/barra` only: takes orders, charges cash/transfer, applies courtesies, creates cash closings. Cannot void sales, approve closings, edit the menu or see sales history.
 - **Attendance (QR check-in, `SPEC-QR-CHECKIN.md`):**
   - Each `pending` enrollment has a single-use `checkin_token` (64 hex).
   - The QR points to `/check-in?token=…`, which `POST /api/check-in` processes. Only the class's own coach or an admin can process it; a client gets 403. The check-in runs in one `FOR UPDATE` transaction that sets `attended`, sets `checked_in_at` and clears the token.
   - It is only allowed on the class's CDMX calendar day.
   - The daily cron (`/api/cron/complete-classes`, 00:00 CDMX) sets still-`pending` enrollments to `absent` for classes from `ATTENDANCE_AUTO_CLOSE_FROM` onward. Code lives in `src/lib/checkin/`.
 - **Special events:** no guests via Open Lab, no user-initiated cancellations/refunds, spots confirmed only once payment is approved.
+
+- **Cafetería (`SPEC-CAFETERIA.md`, code in `src/modules/cafeteria`):**
+  - Money is **integer cents** (`*_cents`). Parse/format only with `domain/money.ts` (`parsePesos`, `formatPesos`). Never mix with package prices (whole pesos).
+  - Categories have **two levels** (parent → subcategory). The parent's `uses_temperature` is inherited: drinks require `cold`/`hot` (a cold and a hot drink are two products), food has `NULL`.
+  - Server recomputes prices, totals and courtesy balances; `bar_orders.request_id` makes charging idempotent.
+  - **Courtesies:** coach monthly quota (`cafeteria_settings.coach_monthly_courtesy`, eligibility `product override ?? subcategory ?? parent ?? false`, period `YYYY-MM` CDMX) and admin **grants** (scope any / category incl. subcategories / product, optional expiry = end of that CDMX day). Balances are derived from `bar_order_items` of `paid` orders, so voiding returns the credit. Take `pg_advisory_xact_lock(hashtextextended('bar-courtesy:'||user_id,0))` before counting. Allocation is an optimal matching (`domain/courtesy-grants.ts`).
+  - **Closing:** barra declares cash delivered (≤ collected, reason if less); state `pending` until the admin approves (`approved`) or records a shortfall (`approved_with_shortfall`). Emails go to `cafeteria_settings.closing_notify_emails`; a failed email never rolls back the closing and can be retried.
+  - **Member discount (D13):** `suscriptions.bar_discount_percent` (set per package in `/admin/packages`) applies to a customer whose subscription is active (`active`, `status='active'`, payment confirmed, not expired) on everything charged. Order-level: `total = subtotal − discount` (DB `CHECK`); line totals stay at full price. Computed server-side in `createOrder` via `tx.memberships.activeBarDiscount`.
+  - Only the admin voids a sale, with a reason, and only before its closing.
+  - Public `/menu` is `force-dynamic` and reads `getCachedMenu()` (`unstable_cache`, tag `cafeteria-menu`). Every menu mutation goes through `mutateMenu` in `application/use-cases/menu.ts`, which calls `updateTag` after commit (guarded by `menu-cache-guard.test.ts`).
+  - Layer rule (`module-boundaries.test.ts`): `domain` imports nothing; `application` imports only `domain`; pages/components use `presentation` (actions, `queries.ts`, `types.ts`) and pure `domain` helpers, never `application`.
+- **Confirmations:** every critical action (save/delete, charge, closing, approve, void, grant/revoke, role change, bar account) opens the shared `Modal` and runs nothing until confirmed. Tests use `expectConfirmBeforeAction` from `src/test-utils/confirm.ts`. Marking a product sold out, filters, searches and email retry need no modal.
 
 ## 5. Code Conventions & Patterns
 - SOLID, Clean Code, strict typing (no `any`); Server Actions return the typed results in `src/lib/types/actions.ts`.

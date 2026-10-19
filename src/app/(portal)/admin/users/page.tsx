@@ -7,7 +7,7 @@ import { UserTable } from '@/components/admin/UserTable';
 import { Pagination } from '@/components/ui/Pagination';
 import { UserSearch } from '@/components/admin/UserSearch';
 import { UserRoleFilter } from '@/components/admin/UserRoleFilter';
-import type { UserRole } from '@/lib/types/roles';
+import { ALL_ROLES, type UserRole } from '@/lib/types/roles';
 
 const PAGE_SIZE = 10;
 
@@ -41,7 +41,7 @@ export default async function AdminUsersPage({
     if (searchCond) conditions.push(searchCond);
   }
 
-  if (roleFilter && ['client', 'coach', 'admin'].includes(roleFilter)) {
+  if (roleFilter && ALL_ROLES.includes(roleFilter as UserRole)) {
     conditions.push(eq(users.role, roleFilter as UserRole));
   }
 
@@ -52,7 +52,7 @@ export default async function AdminUsersPage({
     ? or(ilike(users.username, `%${searchQuery}%`), ilike(users.email, `%${searchQuery}%`))
     : undefined;
 
-  const roleCounts = { all: 0, client: 0, coach: 0, admin: 0 };
+  const roleCounts = { all: 0, client: 0, coach: 0, admin: 0, barra: 0 };
 
   const roleCountsConditions: SQL[] = [isNull(users.deletedAt)];
   if (searchCond) roleCountsConditions.push(searchCond);

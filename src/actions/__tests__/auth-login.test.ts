@@ -153,3 +153,23 @@ describe('loginAction: safe post-login redirect', () => {
     }
   );
 });
+
+describe('loginAction: rol barra (TASK-CF-ROLE-01)', () => {
+  it('redirige a /barra', { timeout: 30000 }, async () => {
+    vi.clearAllMocks();
+    (db.query.users.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'barra-1',
+      email: 'barra@test.com',
+      password: await hashPassword('secret-password'),
+      role: 'barra',
+      emailVerified: true,
+      deletedAt: null,
+    });
+    const formData = new FormData();
+    formData.set('email', 'barra@test.com');
+    formData.set('password', 'secret-password');
+    await loginAction(null, formData);
+    expect(redirect).toHaveBeenCalledWith('/barra');
+  });
+});
+

@@ -11,6 +11,7 @@ import { loginRateLimiter, passwordResetRateLimiter } from '@/lib/auth/rate-limi
 import { safeRedirectPath } from '@/lib/auth/safe-redirect';
 import { sendPasswordResetEmail, sendVerificationEmail } from '@/lib/email/service';
 import type { ActionResult } from '@/lib/types';
+import { dashboardForRole } from '@/lib/types/roles';
 
 const GENERIC_LOGIN_ERROR = 'Credenciales inválidas. Verifica tu correo y contraseña.';
 
@@ -59,7 +60,7 @@ export async function loginAction(_prevState: ActionResult | null, formData: For
   await createSession(user.id, user.role, user.email);
 
   // Redirect to the requested internal page (e.g. QR check-in) or the role-specific portal
-  const dashboard = user.role === 'admin' ? '/admin' : user.role === 'coach' ? '/coach' : '/client';
+  const dashboard = dashboardForRole(user.role);
   redirect(safeRedirectPath(formData.get('redirect')) ?? dashboard);
 }
 

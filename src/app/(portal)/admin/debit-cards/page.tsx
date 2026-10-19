@@ -22,6 +22,7 @@ export default async function AdminDebitCardsPage() {
     cardNumber: card.cardNumber,
     cardBank: card.cardBank,
     active: card.active ?? false,
+    barActive: card.barActive,
   }));
 
   return (

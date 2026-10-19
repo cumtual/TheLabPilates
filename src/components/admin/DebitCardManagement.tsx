@@ -10,6 +10,7 @@ import {
   activateDebitCardAction,
   deactivateDebitCardAction,
   deleteDebitCardAction,
+  setBarBankAccountAction,
 } from '@/actions/debit-cards';
 import type { ActionResult } from '@/lib/types';
 
@@ -19,6 +20,8 @@ interface DebitCard {
   cardNumber: string;
   cardBank: string;
   active: boolean;
+  /** Cuenta que ve la barra al cobrar por transferencia (SPEC-CAFETERIA A6). */
+  barActive?: boolean;
 }
 
 interface DebitCardManagementProps {
@@ -37,7 +40,29 @@ export function DebitCardManagement({ cards }: DebitCardManagementProps) {
   const [localActiveId, setLocalActiveId] = useState<string | null>(
     cards.find((c) => c.active)?.id ?? null
   );
+  const [localBarId, setLocalBarId] = useState<string | null>(cards.find((c) => c.barActive)?.id ?? null);
+  const [confirmBar, setConfirmBar] = useState<{ id: string | null; label: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+
+  /** D9: cambiar la cuenta de la barra pide confirmación. No toca `active` (suscripciones). */
+  function handleConfirmBar() {
+    if (!confirmBar) return;
+    const { id } = confirmBar;
+    setConfirmBar(null);
+    setError(null);
+    setSuccessMessage(null);
+    setPendingAction('bar');
+    startTransition(async () => {
+      const result = await setBarBankAccountAction(id);
+      if (result.success) {
+        setLocalBarId(id);
+        setSuccessMessage(result.message ?? 'Listo.');
+      } else {
+        setError(result.error);
+      }
+      setPendingAction(null);
+    });
+  }
 
   function handleAddSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -221,6 +246,7 @@ export function DebitCardManagement({ cards }: DebitCardManagementProps) {
                         {card.cardBank}
                       </p>
                       {isActive && <Badge variant="confirmed">Activa</Badge>}
+                      {localBarId === card.id && <Badge variant="active">Barra</Badge>}
                     </div>
                     <p className="font-body text-sm text-on-surface-variant">
                       Titular: {card.cardName}
@@ -252,6 +278,20 @@ export function DebitCardManagement({ cards }: DebitCardManagementProps) {
                     )}
                     <button
                       type="button"
+                      onClick={() =>
+                        setConfirmBar(
+                          localBarId === card.id
+                            ? { id: null, label: `${card.cardBank} · ${card.cardName}` }
+                            : { id: card.id, label: `${card.cardBank} · ${card.cardName} · ${card.cardNumber}` }
+                        )
+                      }
+                      disabled={isPending && pendingAction === 'bar'}
+                      className="inline-flex items-center justify-center px-3 py-2 min-h-11 font-body text-sm font-medium text-on-surface-variant border border-outline-variant rounded-lg transition-colors hover:bg-surface-container-high disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {localBarId === card.id ? 'Quitar de la barra' : 'Usar en la barra'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setConfirmDeleteId(card.id)}
                       disabled={isPending && pendingAction === `delete-${card.id}`}
                       className="inline-flex items-center justify-center px-3 py-2 min-h-11 font-body text-sm font-medium text-error border border-error/30 rounded-lg transition-colors hover:bg-error/10 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -265,6 +305,22 @@ export function DebitCardManagement({ cards }: DebitCardManagementProps) {
           })}
         </div>
       )}
+
+      <Modal
+        isOpen={confirmBar !== null}
+        onClose={() => setConfirmBar(null)}
+        onConfirm={handleConfirmBar}
+        title={confirmBar?.id ? 'Usar esta cuenta en la barra' : 'Quitar la cuenta de la barra'}
+        confirmLabel={confirmBar?.id ? 'Sí, usar en la barra' : 'Sí, quitar'}
+        cancelLabel="Cancelar"
+      >
+        <p>{confirmBar?.label}</p>
+        <p className="mt-2 text-sm text-on-surface-variant">
+          {confirmBar?.id
+            ? 'La barra mostrará esta cuenta al cobrar por transferencia. No cambia la tarjeta activa de las suscripciones.'
+            : 'La barra no podrá cobrar por transferencia hasta que marques otra cuenta.'}
+        </p>
+      </Modal>
 
       {/* Confirm Add Modal */}
       <Modal

@@ -24,6 +24,7 @@ import { CheckinQrButton } from '@/components/client/CheckinQrButton';
 import { CreditBalances } from '@/components/client/CreditBalances';
 import { getSubscriptionBalances } from '@/lib/queries/packages';
 import type { CreditBalanceView } from '@/lib/subscription/package-view';
+import { MyCourtesiesSection } from '@/components/cafeteria/MyCourtesiesSection';
 
 function formatDate(date: Date): string {
   const day = date.getDate().toString().padStart(2, '0');
@@ -214,6 +215,9 @@ export default async function ClientDashboardPage() {
 
       {/* Pending bank transfer payments */}
       <PendingTransferBanner transfers={pendingTransfers} bank={bankInfo} />
+
+      {/* Cortesías de la cafetería (SPEC-CAFETERIA D12) */}
+      <MyCourtesiesSection />
 
       {/* Evento especial disponible */}
       {availableEvent && (
