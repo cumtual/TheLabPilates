@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
+import { ALL_ROLES, dashboardForRole, type UserRole } from '@/lib/types/roles';
 
 const SESSION_COOKIE = 'session';
 
-const protectedPrefixes = ['/client', '/coach', '/admin'];
+const protectedPrefixes = ALL_ROLES.map(dashboardForRole);
 const authPages = ['/login', '/register', '/reset-password', '/verify-email'];
 
-const roleDashboard: Record<string, string> = {
-  client: '/client',
-  coach: '/coach',
-  admin: '/admin',
-};
+function roleDashboard(role: string): string {
+  return ALL_ROLES.includes(role as UserRole) ? dashboardForRole(role as UserRole) : '/client';
+}
 
 async function verifyToken(token: string) {
   try {
@@ -42,7 +41,7 @@ export async function middleware(request: NextRequest) {
 
   // Authenticated user on auth pages or root → redirect to their portal
   if (isAuthPage && payload) {
-    const dashboard = roleDashboard[payload.role] || '/client';
+    const dashboard = roleDashboard(payload.role);
     return NextResponse.redirect(new URL(dashboard, request.url));
   }
 
@@ -53,7 +52,7 @@ export async function middleware(request: NextRequest) {
 
   // Authenticated user on wrong portal → redirect to correct one
   if (isProtectedRoute && payload) {
-    const allowedPrefix = roleDashboard[payload.role] || '/client';
+    const allowedPrefix = roleDashboard(payload.role);
     if (!pathname.startsWith(allowedPrefix)) {
       return NextResponse.redirect(new URL(allowedPrefix, request.url));
     }
@@ -72,5 +71,6 @@ export const config = {
     '/client/:path*',
     '/coach/:path*',
     '/admin/:path*',
+    '/barra/:path*',
   ],
 };

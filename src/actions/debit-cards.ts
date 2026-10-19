@@ -86,12 +86,48 @@ export async function deleteDebitCardAction(cardId: string): Promise<ActionResul
     return { success: false, error: 'ID de tarjeta no proporcionado.' };
   }
 
-  // Soft delete
+  // Soft delete (también deja de ser la cuenta de la barra)
   await db
     .update(debitCards)
-    .set({ deletedAt: new Date(), active: false })
+    .set({ deletedAt: new Date(), active: false, barActive: false })
     .where(eq(debitCards.id, cardId));
 
   revalidatePath('/admin/debit-cards');
   return { success: true, message: 'Tarjeta eliminada.' };
+}
+
+/**
+ * Cuenta bancaria de la barra (SPEC-CAFETERIA A6): una sola a la vez, independiente de
+ * `active` (suscripciones). `null` quita la marca. El índice único parcial lo respalda.
+ */
+export async function setBarBankAccountAction(cardId: string | null): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session || session.role !== 'admin') {
+    return { success: false, error: 'No tienes permisos para esta acción.' };
+  }
+
+  if (cardId !== null) {
+    const [card] = await db
+      .select({ id: debitCards.id })
+      .from(debitCards)
+      .where(and(eq(debitCards.id, cardId), isNull(debitCards.deletedAt)))
+      .limit(1);
+    if (!card) return { success: false, error: 'La tarjeta no existe o fue eliminada.' };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.update(debitCards).set({ barActive: false }).where(eq(debitCards.barActive, true));
+    if (cardId !== null) {
+      await tx
+        .update(debitCards)
+        .set({ barActive: true })
+        .where(and(eq(debitCards.id, cardId), isNull(debitCards.deletedAt)));
+    }
+  });
+
+  revalidatePath('/admin/debit-cards');
+  return {
+    success: true,
+    message: cardId ? 'Cuenta marcada para la barra.' : 'La barra ya no tiene cuenta para transferencias.',
+  };
 }

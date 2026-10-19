@@ -16,6 +16,7 @@ export const RULE_LABEL_MAX = 60;
 export const GUEST_CREDITS_MAX = 10;
 export const VALIDITY_DAYS_MAX = 365;
 export const DEFAULT_VALIDITY_DAYS = 30;
+export const BAR_DISCOUNT_MAX = 100;
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Usa el formato HH:MM.');
 
@@ -75,6 +76,13 @@ const baseFields = {
   validity: validitySchema,
   displayOrder: z.number().int().min(0).max(999).default(0),
   isFeatured: z.boolean().default(false),
+  // % de descuento en la barra con este paquete activo (SPEC-CAFETERIA D13).
+  barDiscountPercent: z
+    .number('Indica el descuento.')
+    .int('El descuento debe ser un número entero.')
+    .min(0, 'Mínimo 0 %.')
+    .max(BAR_DISCOUNT_MAX, `Máximo ${BAR_DISCOUNT_MAX} %.`)
+    .default(0),
 };
 
 export const packageInputSchema = z

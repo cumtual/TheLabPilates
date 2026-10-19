@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { changeUserRoleAction, deleteUserAction } from '@/actions/admin';
-import type { UserRole } from '@/lib/types/roles';
+import { ALL_ROLES, ROLE_LABELS, type UserRole } from '@/lib/types/roles';
 
 interface UserRow {
   id: string;
@@ -20,16 +20,11 @@ interface UserTableProps {
   users: UserRow[];
 }
 
-const roleLabels: Record<UserRole, string> = {
-  client: 'Cliente',
-  coach: 'Coach',
-  admin: 'Admin',
-};
-
 const roleBadgeVariant: Record<UserRole, 'confirmed' | 'pending' | 'expired'> = {
   client: 'confirmed',
   coach: 'pending',
   admin: 'expired',
+  barra: 'pending',
 };
 
 export function UserTable({ users }: UserTableProps) {
@@ -38,6 +33,7 @@ export function UserTable({ users }: UserTableProps) {
   const [isPending, startTransition] = useTransition();
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; name: string } | null>(null);
+  const [confirmRole, setConfirmRole] = useState<{ id: string; name: string; role: UserRole } | null>(null);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [localRoles, setLocalRoles] = useState<Record<string, UserRole>>(() => {
     const map: Record<string, UserRole> = {};
@@ -46,6 +42,14 @@ export function UserTable({ users }: UserTableProps) {
     }
     return map;
   });
+
+  /** D9: el cambio de rol da o quita acceso a un portal; se confirma antes. */
+  function handleRoleConfirm() {
+    if (!confirmRole) return;
+    const { id, role } = confirmRole;
+    setConfirmRole(null);
+    handleRoleChange(id, role);
+  }
 
   function handleRoleChange(userId: string, newRole: UserRole) {
     setError(null);
@@ -127,7 +131,7 @@ export function UserTable({ users }: UserTableProps) {
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant={roleBadgeVariant[currentRole]}>
-                      {roleLabels[currentRole]}
+                      {ROLE_LABELS[currentRole]}
                     </Badge>
                     <span className="font-body text-xs text-outline">
                       Registrado: {user.createdAt}
@@ -139,15 +143,17 @@ export function UserTable({ users }: UserTableProps) {
                   <select
                     value={currentRole}
                     onChange={(e) =>
-                      handleRoleChange(user.id, e.target.value as UserRole)
+                      setConfirmRole({ id: user.id, name: user.username, role: e.target.value as UserRole })
                     }
                     disabled={isPending && pendingUserId === user.id}
                     className="font-body text-sm text-on-surface bg-surface-container border border-outline/30 rounded-lg px-3 py-2 min-h-11 min-w-11 focus:outline-2 focus:outline-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label={`Cambiar rol de ${user.username}`}
                   >
-                    <option value="client">Cliente</option>
-                    <option value="coach">Coach</option>
-                    <option value="admin">Admin</option>
+                    {ALL_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {ROLE_LABELS[role]}
+                      </option>
+                    ))}
                   </select>
 
                   <Link
@@ -172,6 +178,20 @@ export function UserTable({ users }: UserTableProps) {
           );
         })}
       </div>
+
+      <Modal
+        isOpen={confirmRole !== null}
+        onClose={() => setConfirmRole(null)}
+        onConfirm={handleRoleConfirm}
+        title="Cambiar rol"
+        confirmLabel="Sí, cambiar rol"
+        cancelLabel="Cancelar"
+      >
+        <p>
+          <strong>{confirmRole?.name}</strong> pasará a tener el rol{' '}
+          <strong>{confirmRole ? ROLE_LABELS[confirmRole.role] : ''}</strong> y solo podrá entrar a ese portal.
+        </p>
+      </Modal>
 
       {/* Delete Confirmation Modal */}
       <Modal

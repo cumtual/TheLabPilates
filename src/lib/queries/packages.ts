@@ -32,6 +32,8 @@ export type AdminPackageView = PackageCardView & {
   validityDays: number;
   guestCredits: number;
   displayOrder: number;
+  /** % de descuento en la barra (SPEC-CAFETERIA D13). */
+  barDiscountPercent: number;
   salesCount: number;
   rules: { label: string | null; credits: number; allowedClassTypes: ClassType[]; timeWindow: { start: string; end: string } | null }[];
 };
@@ -64,6 +66,7 @@ export async function getAdminPackages(viewer: AuditViewer): Promise<AdminPackag
     validityDays: row.validityDays ?? DEFAULT_VALIDITY_DAYS,
     guestCredits: row.guestCredits,
     displayOrder: row.displayOrder,
+    barDiscountPercent: row.barDiscountPercent,
     salesCount: salesById.get(row.id) ?? 0,
     rules: row.rules.map((rule) => ({
       label: rule.label,

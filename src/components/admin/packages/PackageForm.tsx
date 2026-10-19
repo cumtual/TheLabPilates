@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { PackageCard } from '@/components/sections/PackageCard';
 import { createPackageAction, updatePackageAction } from '@/actions/admin-packages';
 import type { AdminPackageView } from '@/lib/queries/packages';
@@ -35,6 +36,7 @@ type FormState = {
   guestCredits: string;
   displayOrder: string;
   isFeatured: boolean;
+  barDiscount: string;
   rules: RuleDraft[];
 };
 
@@ -55,6 +57,7 @@ function initialState(pkg?: AdminPackageView): FormState {
     guestCredits: String(pkg?.guestCredits ?? 0),
     displayOrder: String(pkg?.displayOrder ?? 0),
     isFeatured: pkg?.isFeatured ?? false,
+    barDiscount: String(pkg?.barDiscountPercent ?? 0),
     rules: pkg?.rules.length
       ? pkg.rules.map((rule) => ({
           credits: String(rule.credits),
@@ -80,6 +83,7 @@ function toInput(state: FormState, isUnlimited: boolean, currentSessions: number
     validity: { amount: toNumber(state.validityAmount), unit: state.validityUnit },
     displayOrder: toNumber(state.displayOrder),
     isFeatured: state.isFeatured,
+    barDiscountPercent: toNumber(state.barDiscount),
   };
   if (state.kind === 'special') {
     return {
@@ -116,6 +120,7 @@ export function PackageForm({ pkg }: PackageFormProps) {
   const [submitted, setSubmitted] = useState(false);
   const [descriptionOverflow, setDescriptionOverflow] = useState(false);
   const [serverMessage, setServerMessage] = useState<string | null>(null);
+  const [pendingInput, setPendingInput] = useState<PackageInput | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const isEdit = Boolean(pkg);
@@ -141,8 +146,14 @@ export function PackageForm({ pkg }: PackageFormProps) {
     const found = validate(state);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
+    setPendingInput(toInput(state, isUnlimited, pkg?.sessions ?? 0));
+  }
 
-    const input = toInput(state, isUnlimited, pkg?.sessions ?? 0);
+  /** D9: solo se guarda tras confirmar el resumen en el modal. */
+  function confirmSave() {
+    const input = pendingInput;
+    if (!input) return;
+    setPendingInput(null);
     startTransition(async () => {
       const result = pkg ? await updatePackageAction(pkg.id, input) : await createPackageAction(input);
       if (result.success) {
@@ -407,6 +418,23 @@ export function PackageForm({ pkg }: PackageFormProps) {
           </div>
         </div>
 
+        <div>
+          <Input
+            id="barDiscount"
+            label="Descuento en la barra (%)"
+            type="number"
+            min={0}
+            max={100}
+            value={state.barDiscount}
+            onChange={(e) => change({ barDiscount: e.target.value })}
+            error={errors.barDiscountPercent}
+            className="w-40"
+          />
+          <p className="mt-1 font-body text-[13px] text-on-surface-variant">
+            Se aplica en la cafetería a quien tenga este paquete activo. 0 = sin descuento.
+          </p>
+        </div>
+
         {serverMessage && (
           <p role="alert" className="font-body text-sm text-error">
             {serverMessage}
@@ -428,6 +456,35 @@ export function PackageForm({ pkg }: PackageFormProps) {
           Volver a paquetes
         </Link>
       </form>
+
+      <Modal
+        isOpen={pendingInput !== null}
+        onClose={() => setPendingInput(null)}
+        onConfirm={confirmSave}
+        title={isEdit ? 'Guardar cambios del paquete' : 'Crear paquete'}
+        confirmLabel="Sí, guardar"
+        cancelLabel="Cancelar"
+      >
+        <dl className="space-y-1">
+          <div className="flex justify-between gap-4">
+            <dt>Nombre</dt>
+            <dd className="font-semibold text-on-surface">{state.name}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Precio</dt>
+            <dd className="font-semibold text-on-surface">${state.price}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Vigencia</dt>
+            <dd className="font-semibold text-on-surface">{validityDaysOf(state)} días</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt>Descuento en la barra</dt>
+            <dd className="font-semibold text-on-surface">{state.barDiscount || 0} %</dd>
+          </div>
+        </dl>
+        {salesCount > 0 && <p className="mt-3">Los cambios aplican solo a compras nuevas.</p>}
+      </Modal>
 
       <aside className="lg:sticky lg:top-6 self-start space-y-2">
         <p className="font-body text-label-caps uppercase tracking-widest text-on-surface-variant">Vista previa</p>

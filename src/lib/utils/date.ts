@@ -334,3 +334,46 @@ export function minutesToHHMM(totalMinutes: number): string {
   const minutes = totalMinutes % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
+
+const ymdFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** Día calendario CDMX de un instante: `'2026-10-15'`. */
+export function getMexicoCityYmd(date: Date | string): string {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) throw new Error('Fecha inválida');
+  return ymdFormatter.format(d);
+}
+
+/** Mes CDMX de un instante: `'2026-10'`. Periodo del cupo mensual de cortesías de coaches. */
+export function getMexicoCityYearMonth(date: Date | string): string {
+  return getMexicoCityYmd(date).slice(0, 7);
+}
+
+/** `'YYYY-MM-DD'` de una fecha real del calendario (rechaza 2026-02-29, 2026-13-01…). */
+export function isValidYmd(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
+/** Último milisegundo del mes CDMX que contiene `date` (UTC-6 fijo). */
+export function getMexicoCityEndOfMonth(date: Date | string): Date {
+  const [year, month] = getMexicoCityYearMonth(date).split('-').map(Number);
+  // Primer instante del mes siguiente en CDMX, menos 1 ms. Date.UTC normaliza el mes 13.
+  return new Date(Date.UTC(year, month, 1, 6, 0, 0, 0) - 1);
+}
+
+/** Rango de días CDMX inclusivo: 00:00:00.000 de `fromYmd` a 23:59:59.999 de `toYmd`. */
+export function getMexicoCityRangeForDays(fromYmd: string, toYmd: string): { start: Date; end: Date } {
+  if (!isValidYmd(fromYmd) || !isValidYmd(toYmd)) throw new Error('Fecha inválida');
+  return {
+    start: new Date(`${fromYmd}T00:00:00.000-06:00`),
+    end: new Date(`${toYmd}T23:59:59.999-06:00`),
+  };
+}

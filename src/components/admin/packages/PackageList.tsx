@@ -18,6 +18,7 @@ export function PackageList({ packages }: PackageListProps) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [toDelete, setToDelete] = useState<AdminPackageView | null>(null);
+  const [toToggle, setToToggle] = useState<AdminPackageView | null>(null);
 
   function run(action: () => Promise<{ success: boolean; message?: string; error?: string }>) {
     startTransition(async () => {
@@ -32,6 +33,14 @@ export function PackageList({ packages }: PackageListProps) {
     const { id } = toDelete;
     setToDelete(null);
     run(() => softDeletePackageAction(id));
+  }
+
+  /** D9: activar o desactivar cambia lo que ve el público; se confirma antes. */
+  function confirmToggle() {
+    if (!toToggle) return;
+    const { id, isActive } = toToggle;
+    setToToggle(null);
+    run(() => setPackageActiveAction(id, !isActive));
   }
 
   return (
@@ -85,7 +94,7 @@ export function PackageList({ packages }: PackageListProps) {
                 <button
                   type="button"
                   disabled={isPending}
-                  onClick={() => run(() => setPackageActiveAction(pkg.id, !pkg.isActive))}
+                  onClick={() => setToToggle(pkg)}
                   className="min-h-11 px-3 font-body text-sm border border-outline-variant rounded-DEFAULT hover:bg-surface-container-low disabled:opacity-50"
                 >
                   {pkg.isActive ? 'Desactivar' : 'Activar'}
@@ -114,6 +123,22 @@ export function PackageList({ packages }: PackageListProps) {
         variant="danger"
       >
         <p>El paquete dejará de mostrarse en la landing y en la tienda. Las suscripciones ya vendidas no cambian.</p>
+      </Modal>
+
+      <Modal
+        isOpen={toToggle !== null}
+        onClose={() => setToToggle(null)}
+        onConfirm={confirmToggle}
+        title={`${toToggle?.isActive ? 'Desactivar' : 'Activar'} ${toToggle?.name ?? 'paquete'}`}
+        confirmLabel={toToggle?.isActive ? 'Sí, desactivar' : 'Sí, activar'}
+        cancelLabel="Cancelar"
+        variant={toToggle?.isActive ? 'danger' : 'default'}
+      >
+        <p>
+          {toToggle?.isActive
+            ? 'El paquete dejará de mostrarse en la landing y en la tienda. Las suscripciones ya vendidas no cambian.'
+            : 'El paquete volverá a mostrarse en la landing y en la tienda.'}
+        </p>
       </Modal>
     </div>
   );
