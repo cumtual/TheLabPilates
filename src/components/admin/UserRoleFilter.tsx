@@ -3,11 +3,11 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTransition } from 'react';
 
-type RoleFilter = 'all' | 'client' | 'coach' | 'admin';
+type RoleFilter = 'all' | 'client' | 'coach' | 'admin' | 'barra';
 
 interface UserRoleFilterProps {
   currentRole: string;
-  counts: { all: number; client: number; coach: number; admin: number };
+  counts: Record<RoleFilter, number>;
 }
 
 const filterLabels: Record<RoleFilter, string> = {
@@ -15,6 +15,7 @@ const filterLabels: Record<RoleFilter, string> = {
   client: 'Clientes',
   coach: 'Coaches',
   admin: 'Admins',
+  barra: 'Barra',
 };
 
 export function UserRoleFilter({ currentRole, counts }: UserRoleFilterProps) {

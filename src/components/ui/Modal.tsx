@@ -24,6 +24,8 @@ export interface ModalProps {
   hideCancel?: boolean
   /** Visual variant for the confirm button */
   variant?: ModalVariant
+  /** Disable the confirm button (e.g. while a required field is empty or a request runs) */
+  confirmDisabled?: boolean
   /** Additional CSS classes */
   className?: string
 }
@@ -38,6 +40,7 @@ export function Modal({
   cancelLabel = 'Cancelar',
   hideCancel = false,
   variant = 'default',
+  confirmDisabled = false,
   className = '',
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -85,7 +88,7 @@ export function Modal({
       aria-labelledby="modal-title"
     >
       <div
-        className={`w-full max-w-md bg-surface rounded-lg shadow-xl animate-[fade-in_0.2s_ease-out] ${className}`}
+        className={`w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface rounded-lg shadow-xl animate-[fade-in_0.2s_ease-out] ${className}`}
       >
         {/* Header */}
         <div className="px-6 pt-6 pb-2">
@@ -116,7 +119,8 @@ export function Modal({
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-5 py-2.5 min-h-11 min-w-11 font-body text-body-md font-semibold rounded-DEFAULT transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer ${confirmStyles}`}
+            disabled={confirmDisabled}
+            className={`disabled:opacity-50 disabled:cursor-not-allowed px-5 py-2.5 min-h-11 min-w-11 font-body text-body-md font-semibold rounded-DEFAULT transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer ${confirmStyles}`}
           >
             {confirmLabel}
           </button>

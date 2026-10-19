@@ -47,3 +47,6 @@ export const loginRateLimiter = new RateLimiter(5, 15 * 60 * 1000);
 
 // Password reset: 3 requests per hour
 export const passwordResetRateLimiter = new RateLimiter(3, 60 * 60 * 1000);
+
+// Búsqueda de clientes en la barra: 60 por minuto por usuario (SPEC-CAFETERIA §9)
+export const customerSearchRateLimiter = new RateLimiter(60, 60 * 1000);

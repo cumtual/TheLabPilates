@@ -290,7 +290,7 @@ export async function changeUserRoleAction(
     return { success: false, error: 'ID de usuario no proporcionado.' };
   }
 
-  // Validate role is one of: client, coach, admin (Req 11.2)
+  // Validate role is one of ALL_ROLES (Req 11.2; 'barra' en SPEC-CAFETERIA D1)
   if (!ALL_ROLES.includes(newRole as UserRole)) {
     return { success: false, error: 'Rol no válido.' };
   }

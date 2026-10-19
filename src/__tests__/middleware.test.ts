@@ -12,9 +12,9 @@ beforeAll(() => {
   process.env.JWT_SECRET = TEST_SECRET;
 });
 
-type Role = 'client' | 'coach' | 'admin';
+type Role = 'client' | 'coach' | 'admin' | 'barra';
 
-const roleArb = fc.constantFrom<Role>('client', 'coach', 'admin');
+const roleArb = fc.constantFrom<Role>('client', 'coach', 'admin', 'barra');
 
 // Generate a valid sub-path segment (no slashes, URL-safe)
 const pathSegmentArb = fc
@@ -65,6 +65,7 @@ const roleToPrefix: Record<Role, string> = {
   client: '/client',
   coach: '/coach',
   admin: '/admin',
+  barra: '/barra',
 };
 
 /**
@@ -83,7 +84,7 @@ describe('Property 11: Role-Based Access Control', () => {
     await fc.assert(
       fc.asyncProperty(
         roleArb,
-        fc.constantFrom<Role>('client', 'coach', 'admin'),
+        fc.constantFrom<Role>('client', 'coach', 'admin', 'barra'),
         pathSegmentArb,
         async (userRole, routePortal, subPath) => {
           const token = await createToken(userRole);
@@ -114,7 +115,7 @@ describe('Property 11: Role-Based Access Control', () => {
   it('unauthenticated access to any protected route redirects to /login', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.constantFrom<Role>('client', 'coach', 'admin'),
+        fc.constantFrom<Role>('client', 'coach', 'admin', 'barra'),
         pathSegmentArb,
         async (routePortal, subPath) => {
           const routePrefix = roleToPrefix[routePortal];
@@ -176,3 +177,31 @@ describe('Property 11: Role-Based Access Control', () => {
     expect(response.headers.get('location')).toBeNull();
   });
 });
+
+/** Rol `barra` (SPEC-CAFETERIA D1, TASK-CF-ROLE-01). */
+describe('middleware — portal /barra', () => {
+  it.each([
+    ['barra', '/barra/corte', null],
+    ['barra', '/admin/cafeteria', '/barra'],
+    ['barra', '/coach', '/barra'],
+    ['barra', '/client', '/barra'],
+    ['admin', '/barra', '/admin'],
+    ['coach', '/barra/corte', '/coach'],
+    ['client', '/barra', '/client'],
+  ] as const)('%s en %s → %s', async (role, path, expected) => {
+    const response = await middleware(createRequest(path, await createToken(role)));
+    const location = response.headers.get('location');
+    expect(location ? new URL(location).pathname : null).toBe(expected);
+  });
+
+  it('/barra exige sesión y /menu es público', async () => {
+    expect(new URL((await middleware(createRequest('/barra'))).headers.get('location')!).pathname).toBe('/login');
+    expect((await middleware(createRequest('/menu'))).headers.get('location')).toBeNull();
+  });
+
+  it('el matcher incluye /barra', async () => {
+    const { config } = await import('../middleware');
+    expect(config.matcher).toContain('/barra/:path*');
+  });
+});
+

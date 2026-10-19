@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// La tarjeta de cortesías tiene su propio test (MyCourtesiesCard.test.tsx).
+vi.mock('@/components/cafeteria/MyCourtesiesSection', () => ({ MyCourtesiesSection: () => null }));
+
 vi.mock('@/db', () => ({
   db: {
     select: vi.fn(),

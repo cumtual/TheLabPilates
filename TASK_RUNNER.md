@@ -1,3 +1,379 @@
+# TASK-CF — Módulo de Barra / Cafetería
+
+**Estado:** ✅ Ejecutado (2026-10-16), salvo lo marcado como pendiente del usuario. Suite 1300/1300 (167 archivos), `tsc` limpio, `next build` compila (rutas nuevas dinámicas), lint 60 problemas (igual que la base; ninguno en archivos nuevos). TASK-CF-DB-04 ✅ corrida por el usuario (2026-10-15); `/menu` se probó contra esa BD con el build de producción. **Pendiente (usuario):** E2E manual de TASK-CF-VERIFY-01 con cuentas reales, revisión legal del aviso de privacidad y commit. Ajustes al diseño: SPEC §14.
+**Especificación:** `SPEC-CAFETERIA.md` (decisiones D1–D12 en §0; supuestos A1–A13 en §0.1, todos confirmados).
+**Rama:** `feat/cafeteria`, creada después de commitear `feat/special-packages`.
+**Runner:** Vitest. `pnpm test <ruta>` equivale a `vitest run <ruta>`.
+**Ciclo por tarea:** 🔴 escribir los tests y verlos fallar por la razón correcta → 🟢 el código mínimo para que pasen → 🔵 refactor con la suite en verde. Una tarea no empieza hasta que la anterior está en verde.
+**Restricción de BD:** ninguna tarea ejecuta comandos contra la BD. `TASK-CF-DB-04` la ejecuta el usuario.
+**Tiempo de los tests:** `vi.useFakeTimers()` y `vi.setSystemTime(new Date('2026-10-15T10:00:00.000-06:00'))` en todo test que dependa de la hora. Los casos de uso reciben un `Clock` falso.
+**Confirmaciones (D9):** toda tarea de UI con una acción crítica de SPEC §8.4 incluye el test «abre el modal y no ejecuta nada hasta confirmar», con el helper `expectConfirmBeforeAction` (CF-ARCH-01).
+
+## Matriz de trazabilidad
+
+| Requisito | Tareas | Tests |
+|---|---|---|
+| D1 rol `barra` | DB-02, ROLE-01 | `barra-role-migration.test.ts`, `roles-barra.test.ts`, `middleware-barra.test.ts` |
+| D3 cortesías configurables (padre / subcategoría / producto / límite) | DOM-02, APP-05, ADM-03 | `courtesy.test.ts`, `update-courtesy-rules.test.ts`, `CourtesyRules.test.tsx` |
+| D4 centavos | DOM-01, DB-01, ADM-02 | `money.test.ts`, `cafeteria-migration.test.ts`, `ProductForm.test.tsx` |
+| D5 frío / caliente = productos distintos | DB-01, APP-04 | `cafeteria-migration.test.ts`, `menu-admin.test.ts` |
+| D11 regalos de cortesía del admin (cualquier artículo / categoría / producto) | DB-01, DOM-06, APP-01, APP-07, ADM-07, BAR-02 | `courtesy-grants.test.ts`, `create-order.test.ts`, `grant-courtesy.test.ts`, `GrantCourtesyForm.test.tsx`, `CustomerPicker.test.tsx` |
+| D10 comida y bebidas, categorías de dos niveles, temperatura solo en bebidas | DB-01, DOM-05, APP-04, ADM-02, BAR-01, MENU-01 | `category-tree.test.ts`, `menu-admin.test.ts`, `CategoryManager.test.tsx`, `RegisterScreen.test.tsx`, `PublicMenu.test.tsx` |
+| D6 corte con entrega y aprobación del admin | DOM-04, APP-02, INF-02, ADM-01, ADM-06, BAR-04 | `closing.test.ts`, `create-closing.test.ts`, `resolve-closing.test.ts`, `closing-emails.test.ts`, `ClosingApprovalModal.test.tsx` |
+| D6 correo a thelabpilates77@gmail.com | DB-01, INF-02 | `cafeteria-migration.test.ts`, `closing-emails.test.ts` |
+| D7 caché del menú + invalidación | CACHE-00, INF-03, MENU-01 | `menu-cache.test.ts`, `menu-cache-guard.test.ts`, `menu-page.test.tsx` |
+| D8 anular solo admin, antes del corte | APP-03 | `void-order.test.ts` |
+| D9 confirmaciones | CONF-00, ARCH-01, ADM-02, ADM-03, BAR-03, BAR-04, ADM-06 | `*.test.tsx` de cada pantalla |
+| Idempotencia y concurrencia del cobro | APP-01 | `create-order.test.ts` |
+| Fronteras de capas | ARCH-01 | `module-boundaries.test.ts` |
+
+---
+
+## Fase 0 · Preparación
+
+### TASK-CF-CONF-00 · Confirmaciones faltantes en el módulo de paquetes (H9)
+- **Archivos:** `src/components/admin/packages/PackageForm.tsx`, `PackageList.tsx` y sus tests.
+- **Descripción:** `PackageForm` guarda sin confirmar y `PackageList` activa/desactiva sin confirmar. Se agrega el `Modal` de confirmación con el resumen del cambio (nombre, precio, vigencia) antes de crear o guardar, y antes de activar o desactivar.
+- **Tests 🔴:** al enviar el formulario, `createPackageAction` / `updatePackageAction` **no** se llaman hasta pulsar «Sí, guardar»; cancelar no llama a nada; desactivar y activar piden confirmación.
+- **Verificar:** `pnpm test src/components/admin/packages`
+
+### TASK-CF-CACHE-00 · Spike: `updateTag` con `unstable_cache` en un build real
+- **Archivos:** ninguno de producción (ruta temporal `src/app/zz-cache-spike/**`, que se borra al terminar), nota con el resultado en `SPEC-CAFETERIA.md` §7.
+- **Descripción:** comprobar con `pnpm build && pnpm start` que `updateTag('t')` desde una Server Action invalida una función envuelta en `unstable_cache(..., { tags: ['t'] })` y que el siguiente request ve el dato nuevo. Si no, probar `revalidateTag('t', { expire: 0 })`.
+- **Criterio de salida:** queda decidido qué función usa `invalidateMenuCache()`. Si ninguna funciona, se detiene el avance y se consulta (alternativa: caché de página con `revalidatePath`).
+- **Verificar:** manual (el caché de Next no se puede probar en Vitest).
+
+---
+
+## Fase 1 · Base de datos, tipos y arquitectura
+
+### TASK-CF-DB-01 · DDL aditivo — ✅ Ejecutada (2026-10-15)
+- **Archivos:** `sql/manual/2026-10-15_001_cafeteria.sql`, `src/db/__tests__/cafeteria-migration.test.ts`
+- **Descripción:** el script de SPEC §3.1, tal cual.
+- **Tests 🔴** (ignorando comentarios):
+  1. Toda tabla, índice y columna nueva usa `IF NOT EXISTS`.
+  2. Es transaccional (`BEGIN`/`COMMIT`) con `lock_timeout`.
+  3. No contiene `DROP`, `TRUNCATE`, `DELETE`, `UPDATE`, `RENAME`, `SET NOT NULL` ni `ALTER TYPE`. El único `INSERT` es `cafeteria_settings (id) VALUES (1) ON CONFLICT DO NOTHING`.
+  4. Contiene los precios en centavos (`price_cents`, `unit_price_cents`, `line_total_cents`), el correo `thelabpilates77@gmail.com` por defecto y los `CHECK` de §3.3 (pago ⇔ total 0, transferencia con cuenta, anulada con motivo y sin corte, resolución del corte, cortesía de 1 unidad).
+  5. `bar_orders.request_id` es `UNIQUE` y `debit_cards.bar_active` tiene su índice único parcial.
+  6. **Categorías de dos niveles (D10):** `parent_id` referencia a la misma tabla con `ON DELETE RESTRICT`; el `CHECK` impide que sea su propio padre y que una subcategoría use el interruptor `uses_temperature`; `courtesy_eligible` es nullable (herencia); el índice único de nombre usa `COALESCE(parent_id, '0000…')` para que dos subcategorías con el mismo nombre en padres distintos convivan.
+  7. **Comida (A1):** `cafeteria_products.temperature` y `bar_order_items.temperature` aceptan `NULL`; el índice único de producto usa `COALESCE(temperature, '')` (sin eso, la comida repetida pasaría); `bar_order_items.parent_category_name` existe.
+  8. **Regalos (D11):** existe `cafeteria_courtesy_grants` con `quantity` 1–50, alcance coherente (`any` sin categoría ni producto; `category` solo con categoría; `product` solo con producto), revocación completa (quién, cuándo y motivo) y FK a usuarios sin `ON DELETE CASCADE`; `bar_order_items` tiene `courtesy_source` (`monthly`/`grant`) y `courtesy_grant_id`, y el `CHECK` exige una sola fuente por línea (mensual ⇒ periodo y sin regalo; regalo ⇒ id y sin periodo) y prohíbe esos campos en líneas que no son cortesía; el índice de conteo mensual y el de regalos existen.
+- **Verificar:** `pnpm test src/db/__tests__/cafeteria-migration.test.ts`
+
+### TASK-CF-DB-02 · Script del rol `barra` — ✅ Ejecutada (2026-10-15)
+- **Archivos:** `sql/manual/2026-10-15_002_barra_role.sql`, `src/db/__tests__/barra-role-migration.test.ts`
+- **Tests 🔴:** contiene `ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'barra'`, `BEGIN`/`COMMIT` y `lock_timeout`; no contiene otra sentencia de escritura.
+- **Verificar:** `pnpm test src/db/__tests__/barra-role-migration.test.ts`
+
+### TASK-CF-DB-03 · Esquema Drizzle
+- **Archivos:** `src/db/schema.ts`, `src/db/relations.ts`, `src/db/__tests__/schema-cafeteria.test.ts`
+- **Tests 🔴:** las columnas del esquema coinciden con las del script 001 (nombres, `notNull`, defaults); `userRoleEnum` incluye `barra`; `debitCards.barActive` existe; las FK de §3.1 están en `relations`.
+- **Verificar:** `pnpm test src/db/__tests__/schema-cafeteria.test.ts && npx tsc --noEmit`
+
+### TASK-CF-DB-04 · Ejecución en producción (USUARIO)
+1. Aprobar el `ALTER TYPE … ADD VALUE` (D1).
+2. Correr el script 001, luego el 002 y su consulta de verificación. Ambos se pueden repetir sin efecto.
+3. Hacer el deploy después.
+
+### TASK-CF-ARCH-01 · Esqueleto del módulo y fronteras de capas
+- **Archivos:** `src/modules/cafeteria/{domain,application,infrastructure,presentation}/`, `src/modules/cafeteria/__tests__/module-boundaries.test.ts`, `src/test-utils/confirm.ts` (`expectConfirmBeforeAction`)
+- **Tests 🔴:**
+  1. Ningún archivo de `domain` importa nada de `@/`, `drizzle-orm`, `next`, `react` ni `postgres`.
+  2. `application` solo importa `domain`.
+  3. `infrastructure` no importa `presentation`.
+  4. `expectConfirmBeforeAction({ trigger, action })`: abre el diálogo, verifica que `action` no se llamó, confirma y verifica que se llamó una vez; también que cancelar no la llama.
+- **Verificar:** `pnpm test src/modules/cafeteria/__tests__/module-boundaries.test.ts`
+
+### TASK-CF-ROLE-01 · Rol `barra` en toda la app (H3)
+- **Archivos:** `src/lib/types/roles.ts`, `src/lib/auth/{jwt,session}.ts`, `src/middleware.ts`, `src/actions/auth.ts`, `src/components/layout/PortalNav.tsx`, `src/components/admin/{UserTable,UserRoleFilter}.tsx`, `src/actions/admin.ts` (`changeUserRoleAction`), `src/app/(portal)/barra/layout.tsx`, tests.
+- **Tests 🔴:**
+  1. `ALL_ROLES` incluye `barra`; `changeUserRoleAction` lo acepta solo siendo admin.
+  2. Middleware: `barra` → `/barra`; no entra a `/admin`, `/coach` ni `/client`; `coach`, `client` y `admin` no entran a `/barra`.
+  3. El login redirige a `barra` a `/barra`; el registro público sigue creando solo `client`.
+  4. `PortalNav` del rol `barra` muestra Caja, Corte y Menú; `UserTable` y el filtro lo etiquetan.
+  5. Un `barra` recibe 403 en `/api/check-in`.
+- **Verificar:** `pnpm test src/lib src/middleware src/components/layout src/components/admin/__tests__ src/actions/__tests__/admin*.test.ts`
+
+---
+
+## Fase 2 · Dominio y casos de uso
+
+### TASK-CF-DOM-01 · Dinero en centavos
+- **Archivos:** `src/modules/cafeteria/domain/money.ts`, `__tests__/money.test.ts`
+- **Tests 🔴:** `parsePesos('42.5') = 4250`, `'42.50'`, `'42'`, `'0.05' = 5`; rechaza `'42.555'`, `'-1'`, `''`, `'abc'` y más de 10 000.00; `formatPesos(4250) = '$42.50'`, `formatPesos(500000) = '$5,000.00'`; propiedad (fast-check): `parsePesos(formatPesos(n))` devuelve `n`; la suma de centavos es exacta (sin flotantes).
+- **Verificar:** `pnpm test src/modules/cafeteria/domain/__tests__/money.test.ts`
+
+### TASK-CF-DOM-02 · Cupo mensual de coaches
+- **Archivos:** `src/modules/cafeteria/domain/courtesy.ts`, `src/lib/utils/date.ts` (`getMexicoCityYearMonth`), tests.
+- **Tests 🔴:**
+  1. **Elegibilidad con herencia:** `override ?? subcategoría ?? padre ?? false`: padre sí + subcategoría `null` + producto `null` → sí; padre sí + subcategoría `false` → no; subcategoría `true` bajo padre `null` → sí; override `false` en producto gana sobre todo; override `true` en producto de categoría `false` → sí; sin ningún valor → no.
+  2. **Periodo:** `2026-11-01T05:59Z` (31/oct 23:59 CDMX) → `2026-10`; `2026-11-01T06:00Z` → `2026-11`; no depende de `process.env.TZ`.
+  3. **Saldo:** `max(0, límite − usadas)`; límite 0 → nunca hay saldo.
+  4. **Asignación:** con saldo 2 y 3 artículos elegibles marcados → rechaza la tercera con motivo; una no elegible → rechaza con motivo; un usuario que no es coach → rechaza.
+  5. **Propiedad:** nunca se asignan más cortesías que el saldo.
+- **Verificar:** `pnpm test src/modules/cafeteria/domain/__tests__/courtesy.test.ts src/lib/utils/__tests__`
+
+### TASK-CF-DOM-03 · Pedido
+- **Archivos:** `src/modules/cafeteria/domain/order.ts`, tests.
+- **Tests 🔴:** el total ignora las líneas de cortesía; 100 % cortesía → total 0 y sin método; método obligatorio si total > 0; máximo 30 líneas y cantidad 1–20; cantidad > 1 en cortesía → error; las copias (`product_name`, `category_name`, precio) salen del producto; propiedad: `total = Σ unit × qty` de las líneas no cortesía.
+- **Verificar:** `pnpm test src/modules/cafeteria/domain/__tests__/order.test.ts`
+
+### TASK-CF-DOM-04 · Corte de caja
+- **Archivos:** `src/modules/cafeteria/domain/closing.ts`, tests.
+- **Tests 🔴:**
+  1. Totales por método con pedidos mezclados; las cortesías no suman; anulados excluidos.
+  2. Entregado `> cobrado` → error; entregado `< cobrado` sin nota → error; igual → no exige nota.
+  3. Resolución **completa:** `received = delivered`, faltante 0, estado `approved`.
+  4. Resolución **parcial:** `received < delivered` exige nota; faltante = `delivered − received`; estado `approved_with_shortfall`; `received > delivered` → error; `received = delivered` en «no completo» → error.
+  5. Un corte ya resuelto no cambia de estado.
+  6. Propiedad: `cobrado = entregado + diferencia declarada` y `entregado = recibido + faltante`.
+- **Verificar:** `pnpm test src/modules/cafeteria/domain/__tests__/closing.test.ts`
+
+### TASK-CF-DOM-05 · Árbol de categorías (D10, A1, A10)
+- **Archivos:** `src/modules/cafeteria/domain/category-tree.ts`, tests.
+- **Tests 🔴:**
+  1. **Profundidad:** crear una subcategoría bajo otra subcategoría → error; una categoría con hijas no puede volverse hija; ser su propio padre → error.
+  2. **Temperatura:** producto en una categoría cuya **raíz** usa temperatura → exige `cold`/`hot`; en una que no la usa → debe ser `null` (y un valor se rechaza); la subcategoría hereda el interruptor de su padre.
+  3. **Cambio del interruptor** en un padre con productos: se permite solo si todos cumplen la regla nueva; si no, devuelve la lista de productos que faltan.
+  4. **Visibilidad:** un producto es visible solo si él, su categoría y su padre están activos y no eliminados; desactivar un padre oculta toda su rama.
+  5. **Borrado:** no se elimina una categoría con subcategorías o productos activos.
+  6. **Nombres:** dos subcategorías con el mismo nombre en padres distintos conviven; en el mismo padre, no (sin distinguir mayúsculas).
+  7. **Orden y árbol:** `buildMenuTree` devuelve padre › subcategorías › productos ordenados por `sort_order`, con los productos del padre antes que las subcategorías; propiedad: ningún nodo oculto aparece en el árbol.
+- **Verificar:** `pnpm test src/modules/cafeteria/domain/__tests__/category-tree.test.ts`
+
+### TASK-CF-DOM-06 · Cortesías regaladas y asignación (D11, A11–A13)
+- **Archivos:** `src/modules/cafeteria/domain/courtesy-grants.ts`, tests.
+- **Tests 🔴:**
+  1. **Alcance:** `any` cubre todo; `category` cubre los productos de esa categoría **y de sus subcategorías** (un regalo de «Comida» cubre un postre y un sándwich, no un café); `product` cubre solo ese producto.
+  2. **Vigencia:** revocado o vencido no sirve; un regalo que vence el 20/oct vale hasta `2026-10-20T23:59:59.999-06:00` y no vale a las `2026-10-21T00:00:00.000-06:00`; sin vencimiento vale siempre.
+  3. **Restantes:** `cantidad − canjeadas`, nunca negativo; las líneas de pedidos anulados no cuentan.
+  4. **Prioridad (A11):** vence antes → alcance más específico (producto < categoría < cualquiera) → más antiguo; el cupo mensual vence al fin del mes CDMX; un regalo sin vencimiento va al final.
+  5. **Reparto óptimo:** con el regalo A (cualquiera, vence pronto) y el B (solo Latte), un Latte y un Brownie marcados como cortesía → Latte→B y Brownie→A; con una línea más que créditos, devuelve cuáles quedan sin cubrir.
+  6. **Propiedad (fast-check) contra fuerza bruta** en casos pequeños: el reparto cubre el máximo posible de líneas, ninguna fuente se pasa de su saldo, cada línea usa una fuente que la cubre y el resultado es determinista.
+  7. **Mezcla con el cupo mensual:** el mensual (vence el 31/oct) se usa antes que un regalo sin vencimiento; un regalo que vence el 20/oct se usa antes que el mensual; el mensual solo cubre productos elegibles por D3, el regalo no depende de D3.
+  8. `buildScopeLabel`: «Cualquier artículo», «Comida › Postres», «Comida», «Latte (caliente)».
+- **Verificar:** `pnpm test src/modules/cafeteria/domain/__tests__/courtesy-grants.test.ts`
+
+### TASK-CF-APP-01 · `createOrder`
+- **Archivos:** `application/use-cases/create-order.ts`, `application/ports/*`, tests con repositorios en memoria.
+- **Tests 🔴:**
+  1. Recalcula precios desde el menú; ignora cualquier precio del cliente.
+  2. Producto inactivo, eliminado, agotado o inexistente → error.
+  3. **Idempotencia:** el mismo `requestId` dos veces crea **un** pedido y devuelve el mismo folio.
+  4. **Cortesía:** coach con saldo 1 y dos pedidos simultáneos → solo uno obtiene la cortesía (la lectura del saldo se hace tras el candado).
+  5. Transferencia sin cuenta de barra marcada → error claro; con cuenta, el pedido guarda `bank_account_id`.
+  6. Cliente libre vs registrado: `customerUserId` inexistente → error.
+  7. Un pedido que falla a mitad no deja nada guardado (rollback).
+  8. **Regalos (D11):** un cliente que no es coach con un regalo que cubre el artículo → la línea queda como cortesía con `courtesy_source = 'grant'` y su `courtesy_grant_id`; sin regalo aplicable → rechazo con el motivo.
+  9. Regalo vencido, revocado, agotado, o de un alcance que no cubre el artículo → rechazo con motivo; un regalo cuyo producto o categoría fue eliminado o desactivado no se canjea (A13).
+  10. Un coach con cupo mensual y un regalo en el mismo pedido: se reparte según DOM-06 y cada línea guarda su fuente.
+  11. **Concurrencia:** dos pedidos simultáneos del mismo cliente con 1 regalo restante → solo uno lo obtiene (el candado es por cliente y se toma antes de contar).
+  12. Anular el pedido devuelve el crédito al regalo y deja de contar (lo cubre `void-order.test.ts`).
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/create-order.test.ts`
+
+### TASK-CF-APP-02 · `createClosing`, `resolveClosing`, `retryClosingEmail`
+- **Archivos:** `application/use-cases/{create-closing,resolve-closing,retry-closing-email}.ts`, tests.
+- **Tests 🔴:**
+  1. Crear corte: marca solo los pedidos que bloqueó, calcula totales con esas mismas filas y deja el estado `pending`.
+  2. Sin pedidos pagados pendientes → error; dos cortes simultáneos → el segundo falla y no duplica nada.
+  3. Si cambió el turno desde que la barra lo vio (`expectedOrdersCount` / `expectedCashTotalCents` distintos) → error «Cambió el turno, revisa los totales».
+  4. Un corte `pending` **no** bloquea la creación de pedidos nuevos (A4).
+  5. Resolver: solo admin; completo → `approved`; parcial → `approved_with_shortfall` con faltante; un corte ya resuelto → «Este corte ya fue resuelto».
+  6. Se envía el correo 1 al crear y el 2 al resolver; si el envío falla, el corte queda válido, el estado es `failed` y `retryClosingEmail` lo reenvía.
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/create-closing.test.ts src/modules/cafeteria/application/__tests__/resolve-closing.test.ts`
+
+### TASK-CF-APP-03 · `voidOrder`
+- **Archivos:** `application/use-cases/void-order.ts`, tests.
+- **Tests 🔴:** solo admin; el motivo es obligatorio; un pedido con corte → error; un pedido ya anulado → error; anular devuelve el crédito de cortesía (deja de contar) y excluye el pedido de los totales.
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/void-order.test.ts`
+
+### TASK-CF-APP-04 · Menú (admin) y búsqueda de clientes
+- **Archivos:** `application/use-cases/{menu-admin,search-customers}.ts`, tests.
+- **Tests 🔴:**
+  1. CRUD de categorías con `parentId`: dos niveles máximo (DOM-05); el interruptor «Usa temperatura» solo se acepta en un padre; nombre único entre hermanas; no se elimina con subcategorías o productos activos; el borrado es lógico.
+  2. CRUD de productos: precio en centavos válido; **bebida:** temperatura obligatoria y una fría y una caliente del mismo nombre **coexisten**; **comida:** temperatura prohibida y un duplicado exacto en la misma subcategoría → error; el pedido y el menú guardan `category_name` y `parent_category_name`; marcar agotado no la oculta.
+  3. Toda operación que cambia datos del menú llama a `invalidateMenuCache()` (puerto falso); una operación fallida no lo llama.
+  4. `searchCustomers`: menos de 2 caracteres → vacío; máximo 8 resultados; solo `id, nombre, correo, rol`; busca por nombre **o** correo; excluye usuarios eliminados; devuelve el cupo mensual **solo** para coaches y los regalos vigentes (alcance, restantes y vencimiento) de cualquier usuario.
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/menu-admin.test.ts src/modules/cafeteria/application/__tests__/search-customers.test.ts`
+
+### TASK-CF-APP-05 · Reglas de cortesía y ajustes
+- **Archivos:** `application/use-cases/update-courtesy-rules.ts`, tests.
+- **Tests 🔴:** límite 0–31; correos válidos (formato) y sin duplicados, al menos uno; las categorías (padre o subcategoría, valor `true`/`false`/`null`) y los productos se guardan en una sola transacción; el producto o la categoría inexistente → error y nada se guarda; solo admin.
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/update-courtesy-rules.test.ts`
+
+### TASK-CF-APP-06 · Reporte de ventas
+- **Archivos:** `application/use-cases/get-sales-report.ts`, tests.
+- **Tests 🔴:** el rango se interpreta en días CDMX (de las 00:00 a las 23:59:59.999); el filtro por método (efectivo, transferencia, cortesía) y la búsqueda por folio, cliente o producto funcionan; el desglose agrupa **categoría padre › subcategoría › producto** y suma cantidad, ingreso y cortesías (separando cupo mensual y regalos; usando las copias del pedido, así que sobrevive a cambios del menú); los anulados salen de los totales pero se pueden listar; solo admin.
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/get-sales-report.test.ts`
+
+### TASK-CF-APP-07 · Regalar, revocar y listar cortesías (D11)
+- **Archivos:** `application/use-cases/{grant-courtesy,revoke-courtesy,list-courtesy-grants}.ts`, tests.
+- **Tests 🔴:**
+  1. **Regalar:** solo admin (`barra` recibe el error de permisos antes de tocar la BD); el usuario existe y no está eliminado; cantidad 1–50; el alcance exige su categoría o producto, que existe, está activo y no eliminado; el vencimiento, si se da, es futuro y se guarda como el fin de ese día en CDMX; se guarda `scope_label` con el texto legible y quién regaló.
+  2. **Revocar:** motivo obligatorio; revocar un regalo ya revocado, vencido o agotado → error; las cortesías ya canjeadas siguen contadas y no se tocan.
+  3. **Listar:** estado calculado (`active`, `used`, `expired`, `revoked`, `unavailable` si su producto o categoría ya no está disponible); usadas/total con los pedidos `paid`; filtro por estado; búsqueda por nombre o correo del usuario; muestra quién regaló y cuándo (CDMX).
+  4. Regalar y revocar corren en una transacción y no tocan el menú ni invalidan su caché.
+- **Verificar:** `pnpm test src/modules/cafeteria/application/__tests__/grant-courtesy.test.ts`
+
+---
+
+## Fase 3 · Infraestructura
+
+### TASK-CF-INF-01 · Repositorios Drizzle y unidad de trabajo
+- **Archivos:** `infrastructure/drizzle-*-repository.ts`, `drizzle-unit-of-work.ts`, tests.
+- **Tests 🔴** (con `PgDialect().sqlToQuery`): el candado de cortesía usa `pg_advisory_xact_lock` con la llave del cliente (cubre cupo mensual y regalos); el conteo de regalos canjeados une con pedidos `paid`; el corte usa `FOR UPDATE` sobre `closing_id IS NULL AND status = 'paid'`; la anulación y la resolución llevan la guarda de estado en el `WHERE`; el conteo de cortesías une con pedidos `paid`; todas las escrituras corren en la transacción de la unidad de trabajo.
+- **Verificar:** `pnpm test src/modules/cafeteria/infrastructure`
+
+### TASK-CF-INF-02 · Correos del corte
+- **Archivos:** `infrastructure/{resend-mailer,closing-email-templates}.ts`, tests.
+- **Tests 🔴:**
+  1. El correo 1 incluye fecha y hora en formato `DD/MM/YYYY, hh:mm A` CDMX, barra, número de pedidos, efectivo cobrado y entregado (con la diferencia y su motivo), transferencias (cantidad y total), cortesías y el desglose por producto.
+  2. El correo 2 añade quién resolvió, el efectivo recibido y el faltante con la nota.
+  3. Los destinatarios salen de `cafeteria_settings` (por defecto `thelabpilates77@gmail.com`).
+  4. Los textos del usuario se escapan en el HTML.
+  5. `sendEmail` con error → el resultado es `failed`; el estado se guarda.
+- **Verificar:** `pnpm test src/modules/cafeteria/infrastructure/__tests__/closing-emails.test.ts`
+
+### TASK-CF-INF-03 · Caché del menú
+- **Archivos:** `infrastructure/menu-cache.ts`, `src/modules/cafeteria/__tests__/menu-cache-guard.test.ts`
+- **Descripción:** `getCachedMenu()` con `unstable_cache` y la etiqueta `cafeteria-menu`, sin caducidad por tiempo; `invalidateMenuCache()` con la función que decida CACHE-00, más `revalidatePath('/menu')`.
+- **Tests 🔴:** `getCachedMenu` usa la etiqueta y las llaves esperadas; `invalidateMenuCache` llama a la función de invalidación y a `revalidatePath('/menu')`; **guarda estructural:** toda acción de `presentation/actions` que cambia categorías, productos o disponibilidad llama a `invalidateMenuCache`.
+- **Verificar:** `pnpm test src/modules/cafeteria/infrastructure/__tests__/menu-cache.test.ts src/modules/cafeteria/__tests__/menu-cache-guard.test.ts`
+
+### TASK-CF-INF-04 · Server Actions y esquemas Zod
+- **Archivos:** `presentation/schemas.ts`, `presentation/actions/*.ts`, tests.
+- **Tests 🔴:** cada acción rechaza sin sesión y con el rol equivocado (matriz de SPEC §2) **antes** de tocar la BD; una entrada inválida devuelve `fieldErrors`; `searchCustomers` aplica el límite de 60 peticiones por minuto por usuario; los esquemas aceptan precios como texto con centavos.
+- **Verificar:** `pnpm test src/modules/cafeteria/presentation`
+
+---
+
+## Fase 4 · UI de admin
+
+### TASK-CF-ADM-01 · Menú «Cafetería» y componente de corte pendiente
+- **Archivos:** `src/components/layout/PortalNav.tsx`, `src/app/(portal)/admin/cafeteria/page.tsx`, `src/components/cafeteria/PendingClosingAlert.tsx`, tests.
+- **Tests 🔴:** «Cafetería» aparece solo para admin; el resumen del día muestra los totales; con un corte pendiente aparece «Tienes un corte de caja pendiente» (con cantidad si hay varios) que abre el modal de aprobación; sin cortes pendientes no aparece; las páginas redirigen a quien no es admin.
+- **Verificar:** `pnpm test src/components/cafeteria src/components/layout "src/app/(portal)/admin/cafeteria"`
+
+### TASK-CF-ADM-02 · Menú: categorías y productos
+- **Archivos:** `src/app/(portal)/admin/cafeteria/menu/page.tsx`, `src/components/cafeteria/{CategoryManager,ProductManager,ProductForm}.tsx`, tests.
+- **Tests 🔴:**
+  1. El precio acepta centavos (`42.50`) y rechaza más de 2 decimales con el mensaje en el campo.
+  2. **Árbol:** muestra padres con sus subcategorías; «Nueva subcategoría» solo está en los padres; el interruptor «Usa temperatura» solo aparece al crear o editar un padre; no se puede mover una categoría con hijas bajo otra.
+  3. **Formulario de producto:** el selector Fría / Caliente aparece y es obligatorio **solo** si la categoría elegida usa temperatura; en comida no aparece; al cambiar a una categoría de comida se limpia.
+  4. **Confirmaciones (D9):** crear, editar y eliminar categoría, subcategoría y producto piden confirmación con el resumen; eliminar una categoría con subcategorías o productos muestra el motivo; marcar agotado no pide confirmación.
+  5. Los errores del servidor aparecen bajo su campo.
+- **Verificar:** `pnpm test src/components/cafeteria`
+
+### TASK-CF-ADM-03 · Cortesías y correos
+- **Archivos:** `src/app/(portal)/admin/cafeteria/cortesias/page.tsx`, `src/components/cafeteria/CourtesyRules.tsx`, tests.
+- **Tests 🔴:** límite mensual editable (0–31); árbol de categorías con selector tri-estado en cada nodo (heredar / sí / no); selector tri-estado por producto; cada producto muestra su elegibilidad **efectiva** y de dónde viene (producto, subcategoría o padre); lista de correos con validación (al menos uno); guardar pide confirmación con el resumen de cambios.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/CourtesyRules.test.tsx`
+
+### TASK-CF-ADM-04 · Cuenta bancaria de la barra
+- **Archivos:** `src/components/admin/DebitCardManagement.tsx`, `src/actions/debit-cards.ts`, tests.
+- **Tests 🔴:** interruptor «Usar en la barra» por tarjeta, con confirmación; solo una tarjeta marcada a la vez (marcar otra mueve la marca); no cambia `active` (suscripciones); una tarjeta eliminada no se puede marcar.
+- **Verificar:** `pnpm test src/components/admin src/actions/__tests__/debit-cards*.test.ts`
+
+### TASK-CF-ADM-05 · Ventas
+- **Archivos:** `src/app/(portal)/admin/cafeteria/ventas/page.tsx`, `src/components/cafeteria/{SalesDashboard,SalesFilters,VoidOrderModal}.tsx`, tests.
+- **Tests 🔴:** por defecto muestra hoy (CDMX); cada cortesía indica su fuente (cupo mensual o regalo); los filtros de fechas, método y búsqueda arman la consulta esperada; el desglose por producto y los totales coinciden con los datos; **no hay refresco automático:** con temporizadores simulados, pasar el tiempo no dispara ninguna consulta; los datos se consultan al abrir, al cambiar un filtro y al pulsar «Actualizar» (que también se deshabilita mientras carga), y se muestra la hora de la última consulta en CDMX; **anular** abre un modal con folio, total y motivo obligatorio, no se llama a la acción sin motivo, y el botón no aparece en pedidos con corte.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/SalesDashboard.test.tsx`
+
+### TASK-CF-ADM-06 · Cortes y modal de aprobación
+- **Archivos:** `src/app/(portal)/admin/cafeteria/cortes/page.tsx`, `src/components/cafeteria/{ClosingList,ClosingApprovalModal}.tsx`, tests.
+- **Tests 🔴:**
+  1. El modal muestra periodo CDMX, barra, pedidos, **efectivo cobrado**, **efectivo entregado**, la diferencia declarada con su motivo, las transferencias aparte (cantidad y total) y las cortesías.
+  2. «Recibí el efectivo completo» pide confirmación y llama a `resolveClosing` con `received_all`.
+  3. «No lo recibí completo» pide el monto recibido, calcula el faltante en vivo, exige una nota, rechaza un monto mayor o igual al entregado y, tras confirmar, llama con `received_partial`.
+  4. El historial marca los cortes con faltante y los correos fallidos con el botón «Reintentar».
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/ClosingApprovalModal.test.tsx`
+
+### TASK-CF-ADM-07 · Regalar cortesías (D11)
+- **Archivos:** `src/app/(portal)/admin/cafeteria/cortesias/regalos/page.tsx`, `src/components/cafeteria/{GrantCourtesyForm,CourtesyGrantList,RevokeGrantModal}.tsx`, tests.
+- **Tests 🔴:**
+  1. **Usuario:** se busca por nombre o correo (mínimo 2 letras, máximo 8 resultados, con ambos datos visibles); no se puede enviar sin elegir uno.
+  2. **Alcance:** tres opciones — Cualquier artículo, Una categoría o subcategoría (muestra el árbol: «Bebidas», «Comida» y sus subcategorías), Un producto (lista agrupada por categoría); sin alcance válido → error en el campo.
+  3. **Cantidad** 1–50; **vencimiento** opcional que no puede ser una fecha pasada; **nota** opcional.
+  4. **Confirmación (D9):** el modal muestra usuario, cantidad, alcance legible y vencimiento; `grantCourtesy` no se llama hasta confirmar y cancelar no llama nada.
+  5. **Lista:** estado (Activo, Agotado, Vencido, Revocado, «Alcance no disponible»), usadas/total, vencimiento y quién regaló con fecha CDMX; filtros por estado y búsqueda por usuario.
+  6. **Revocar:** disponible solo en regalos activos; el modal muestra cuántas quedan y exige el motivo; no se llama a la acción sin motivo ni sin confirmar.
+  7. La página redirige a quien no es admin; `barra` no accede.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/GrantCourtesyForm.test.tsx src/components/cafeteria/__tests__/CourtesyGrantList.test.tsx "src/app/(portal)/admin/cafeteria"`
+
+---
+
+## Fase 5 · Pantalla de barra
+
+### TASK-CF-BAR-01 · Caja: menú y carrito (móvil primero)
+- **Archivos:** `src/app/(portal)/barra/page.tsx`, `src/app/(portal)/admin/cafeteria/caja/page.tsx`, `src/components/cafeteria/{RegisterScreen,ProductGrid,Cart}.tsx`, tests.
+- **Tests 🔴:** pestañas de **categoría padre** y chips de **subcategoría**; el buscador filtra por nombre en todo el menú; el filtro Todas / Frías / Calientes aparece **solo** en las categorías que usan temperatura (no en Comida); la tarjeta de una bebida muestra el ícono de frío o caliente y la de comida no; el precio con centavos; las agotadas y las de ramas inactivas no se muestran o están deshabilitadas; el carrito suma cantidades y total exactos; en móvil el carrito es un panel inferior (clase `fixed bottom-0 md:static`); las dos rutas usan el mismo componente.
+- **Manual:** revisar 375 px y 768 px en el navegador integrado.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/RegisterScreen.test.tsx`
+
+### TASK-CF-BAR-02 · Cliente y cortesías
+- **Archivos:** `src/components/cafeteria/{CustomerPicker,CourtesyToggle}.tsx`, tests.
+- **Tests 🔴:** nombre libre opcional; el buscador espera 300 ms, no consulta con menos de 2 letras y muestra **nombre y correo** de cada resultado; al elegir un usuario registrado aparece su panel de cortesías: el cupo mensual (solo coaches, «X de 4») y cada regalo vigente con alcance, restantes y vencimiento; un usuario sin cortesías no ve el panel; los artículos cubiertos por algún crédito (cupo mensual por D3 o regalo por D11) muestran el interruptor y se marcan por defecto hasta agotar los créditos; al marcar, se muestra qué crédito usará cada artículo (asignación de DOM-06); sin crédito aplicable el interruptor está deshabilitado con el motivo; cambiar de cliente limpia las cortesías marcadas.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/CustomerPicker.test.tsx`
+
+### TASK-CF-BAR-03 · Cobro con confirmación
+- **Archivos:** `src/components/cafeteria/{PaymentModal,BankTransferModal}.tsx`, tests.
+- **Tests 🔴 (D9):**
+  1. **Efectivo:** abre «Confirmar cobro» con el total y el número de artículos (y cuántos son de cortesía); `createOrder` no se llama hasta confirmar.
+  2. **Transferencia:** el modal muestra banco, titular y cuenta de **la cuenta de barra** y el total; el botón es «Transferencia recibida, cobrar»; sin cuenta marcada la opción está deshabilitada con aviso.
+  3. Cada envío usa un `requestId` nuevo; un doble clic no envía dos veces.
+  4. Éxito → aviso con el folio y carrito vacío; error → el carrito se conserva.
+  5. Un pedido 100 % cortesía no pide método de pago, pero sí confirmación.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/PaymentModal.test.tsx`
+
+### TASK-CF-BAR-04 · Corte de la barra
+- **Archivos:** `src/app/(portal)/barra/corte/page.tsx`, `src/components/cafeteria/ClosingForm.tsx`, tests.
+- **Tests 🔴:** lista los pedidos del turno abierto con los totales por método (transferencias aparte); el campo «Efectivo que entrego» tiene por defecto lo cobrado; si es menor exige la nota; mayor al cobrado → error; **«Hacer corte» pide confirmación** con cobrado, entregado, diferencia y número de pedidos; envía los totales vistos (`expected…`); sin pedidos el botón está deshabilitado; avisa si hay un corte anterior pendiente de aprobación.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/ClosingForm.test.tsx`
+
+### TASK-CF-CLI-01 · «Mis cortesías» en el panel del cliente y del coach (D12)
+- **Archivos:** `application/use-cases/get-my-courtesies.ts`, `presentation/actions/my-courtesies.ts`, `src/components/cafeteria/MyCourtesiesCard.tsx`, `src/app/(portal)/client/page.tsx`, `src/app/(portal)/coach/page.tsx`, tests.
+- **Tests 🔴:**
+  1. El caso de uso usa **solo** el `sub` de la sesión; no acepta un id de usuario como entrada.
+  2. Devuelve los regalos vigentes (alcance legible, restantes/total y vencimiento CDMX) y, si es coach, el cupo mensual; excluye vencidos, revocados y agotados; no incluye quién regaló ni la nota.
+  3. La tarjeta muestra «Comida › Postres · 1 de 2 · vence 20/10/2026» y «Te quedan 3 de 4 este mes»; sin cortesías no se muestra.
+  4. Aparece en el dashboard de `client` y en el de `coach`; los tests actuales de ambos dashboards siguen en verde.
+- **Verificar:** `pnpm test src/components/cafeteria/__tests__/MyCourtesiesCard.test.tsx src/modules/cafeteria/application/__tests__/get-my-courtesies.test.ts "src/app/(portal)/client" "src/app/(portal)/coach"`
+
+---
+
+## Fase 6 · Menú público
+
+### TASK-CF-MENU-01 · Página `/menu`
+- **Archivos:** `src/app/menu/page.tsx`, `src/components/cafeteria/PublicMenu.tsx`, tests.
+- **Tests 🔴:** la página es dinámica (`force-dynamic`) y lee `getCachedMenu`; árbol **categoría padre › subcategoría › productos** en orden; en las categorías con temperatura cada subcategoría separa **Frías** y **Calientes**; en comida es una lista simple; precio `$42.50`; lo agotado atenuado con «Agotado»; las ramas inactivas o sin productos visibles no aparecen; no aparece nada de cortesías; `/menu` no requiere sesión.
+- **Manual:** cambiar un precio en el admin y comprobar que `/menu` lo refleja sin esperar (con el build de CACHE-00).
+- **Verificar:** `pnpm test src/app/menu src/components/cafeteria/__tests__/PublicMenu.test.tsx`
+
+---
+
+## Fase 7 · Cierre
+
+### TASK-CF-DOC-01 · Documentación y legales
+- **`CLAUDE.md`:** rol `barra` y su portal, tablas nuevas, dinero en centavos, reglas de cortesía (cupo mensual y regalos del admin), corte con aprobación del admin, caché del menú y regla de confirmaciones. Lo edita el usuario si el clasificador lo bloquea.
+- **Aviso de privacidad** (`/aviso-de-privacidad`): mencionar que se guardan el nombre del cliente de barra y las compras de usuarios registrados. Test del texto. **Pendiente (usuario):** revisión legal.
+- Se marcan SPEC y esta sección como ejecutadas, con resultados.
+
+### TASK-CF-VERIFY-01 · Verificación final
+- **Comandos:** `pnpm test`, `npx tsc --noEmit`, `pnpm build` y `pnpm lint` (sin problemas nuevos respecto a la base).
+- **E2E manual (usuario, en una BD que no sea de producción):**
+  1. Crear la categoría padre **Bebidas** (usa temperatura) con la subcategoría **Café**, y el padre **Comida** (sin temperatura) con **Postres** y **Sandwiches**. Crear un café frío y otro caliente con centavos, y un postre; verlos en `/menu`.
+  2. Marcar el padre Bebidas como cortesía y excluir una bebida; elegir la cuenta de barra.
+  3. Como `barra`: cobrar en efectivo, cobrar por transferencia (ver el modal bancario) y cobrar con un coach usando cortesías hasta agotar las 4.
+  4. Intentar la quinta cortesía y comprobar el rechazo.
+  5. Hacer un corte entregando menos que lo cobrado; recibir el correo en `thelabpilates77@gmail.com`.
+  6. Como admin: abrir el aviso de corte pendiente, probar «No lo recibí completo» con faltante y comprobar el segundo correo.
+  7. Anular una venta antes del corte y comprobar que ya no se puede después.
+  8. Cambiar un precio y verificar `/menu`.
+  9. **Regalos:** como admin, regalar 2 cortesías de «Comida › Postres» (con vencimiento) a un cliente y 1 de un producto a otro usuario; como barra, canjearlas; comprobar que un café no se cubre con el regalo de postres, que un regalo vencido o agotado se rechaza, y que anular el pedido devuelve el crédito; revocar un regalo desde el panel.
+
+---
+
 # TASK-SP — Paquetes especiales y catálogo de suscripciones
 
 **Estado:** ✅ Ejecutado (2026-10-07). Suite 951/951 (128 archivos, +188 tests), `tsc` limpio, `next build` compila (el prerender de `/` espera los scripts SQL), lint 60 problemas (base: 61, ninguno nuevo). **Pendiente (usuario):** TASK-SP-DB-04, revisión legal y E2E manual de TASK-SP-VERIFY-01. Ajustes al diseño: SPEC §13.
