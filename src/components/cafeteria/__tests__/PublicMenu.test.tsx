@@ -19,10 +19,10 @@ describe('PublicMenu', () => {
     expect(screen.queryByText('Panini')).not.toBeInTheDocument();
   });
 
-  it('bebidas separan Frías y Calientes; comida es una lista simple', () => {
+  it('bebidas separan Frío y Caliente; comida es una lista simple', () => {
     render(<PublicMenu sections={sections} />);
     const cafe = screen.getByRole('heading', { name: 'Café' }).parentElement!;
-    expect(within(cafe).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Frías', 'Calientes']);
+    expect(within(cafe).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Frío', 'Caliente']);
     const postres = screen.getByRole('heading', { name: 'Postres' }).parentElement!;
     expect(within(postres).queryByRole('heading', { level: 4 })).toBeNull();
   });

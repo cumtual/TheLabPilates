@@ -246,7 +246,7 @@ export function MenuManager({ menu }: { menu: AdminMenu }) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-headline text-lg text-on-surface">
                   {root.name}
-                  {root.usesTemperature && <span className="ml-2 align-middle text-xs text-on-surface-variant">Fría / caliente</span>}
+                  {root.usesTemperature && <span className="ml-2 align-middle text-xs text-on-surface-variant">Frío / caliente</span>}
                   {!root.isActive && <span className="ml-2 text-xs text-outline">(oculta)</span>}
                 </h2>
                 {categoryActions(root)}

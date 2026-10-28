@@ -33,7 +33,7 @@ export interface ProductRecord {
   deletedAt: Date | null;
 }
 
-export const TEMPERATURE_LABELS: Record<Temperature, string> = { cold: 'fría', hot: 'caliente' };
+export const TEMPERATURE_LABELS: Record<Temperature, string> = { cold: 'frío', hot: 'caliente' };
 
 export type CategoryIndex = ReadonlyMap<string, CategoryRecord>;
 
@@ -157,7 +157,7 @@ export function validateProductTemperature(
   index: CategoryIndex
 ): void {
   if (requiresTemperature(categoryId, index)) {
-    if (temperature === null) throw invalid('Elige si es fría o caliente.', 'temperature');
+    if (temperature === null) throw invalid('Elige si es frío o caliente.', 'temperature');
   } else if (temperature !== null) {
     throw invalid('Esta categoría no usa temperatura.', 'temperature');
   }

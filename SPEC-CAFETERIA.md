@@ -392,7 +392,7 @@ Las Server Actions (capa `presentation`) validan sesión y rol, parsean con Zod 
   `unstable_cache(loadMenu, ['cafeteria-menu'], { tags: ['cafeteria-menu'] })` **sin** caducidad por tiempo.
 - **Invalidación (D7):** helper único `invalidateMenuCache()` = `updateTag('cafeteria-menu')` (Server Actions) más `revalidatePath('/menu')`. Todo caso de uso de menú que cambie datos lo llama: crear, editar o eliminar categoría o producto, cambiar precio, disponibilidad o visibilidad. Un test estructural falla si una acción del menú no lo llama.
 - **Resultado del spike TASK-CF-CACHE-00 (2026-10-15, `next build && next start`, Next 16.3.5):** con una página `force-dynamic` que lee `unstable_cache(..., { tags })`, una acción vacía (control) **no** cambia el dato; `updateTag(tag)` solo, `revalidateTag(tag, { expire: 0 })` solo y `revalidatePath(ruta)` solo **sí** lo cambian, y el request siguiente ve el dato nuevo. **Decisión:** `invalidateMenuCache()` = `updateTag('cafeteria-menu')` + `revalidatePath('/menu')`. La etiqueta es la principal porque cubre todo lector del menú (caja de barra, admin), no solo `/menu`.
-- Contenido: árbol **categoría padre › subcategoría › productos**, solo con nodos visibles (§4.5) que tengan al menos un producto visible. En las categorías que usan temperatura, cada subcategoría separa **Frías** y **Calientes**; en las demás (comida) es una lista simple. Nombre y precio (`$42.50`); lo agotado se ve atenuado con «Agotado». Sin datos de cortesía.
+- Contenido: árbol **categoría padre › subcategoría › productos**, solo con nodos visibles (§4.5) que tengan al menos un producto visible. En las categorías que usan temperatura, cada subcategoría separa **Frío** y **Caliente**; en las demás (comida) es una lista simple. Nombre y precio (`$42.50`); lo agotado se ve atenuado con «Agotado». Sin datos de cortesía.
 
 ---
 
@@ -403,7 +403,7 @@ Las Server Actions (capa `presentation`) validan sesión y rol, parsean con Zod 
 - **Menú lateral del rol `barra`:** Caja, Corte, Menú (abre `/menu`).
 - **Caja** (una sola pantalla):
   1. **Cliente (opcional):** campo de nombre libre o buscador de usuarios (espera 300 ms, mínimo 2 letras) que muestra **nombre y correo** de cada resultado. Al elegir un usuario registrado aparece su **panel de cortesías**: el cupo mensual (si es coach, «3 de 4 este mes») y cada regalo vigente con su alcance, cuántas le quedan y cuándo vence. Al cobrar se muestra qué crédito usará cada artículo.
-  2. **Productos:** pestañas de **categoría padre** (Bebidas, Comida…) con scroll horizontal y, debajo, chips de **subcategoría** (Café, Postres, Sandwiches…); buscador rápido sobre todo el menú. El filtro Todas / Frías / Calientes aparece **solo** en las categorías que usan temperatura. Cada tarjeta muestra el nombre, el precio y, en bebidas, un ícono de frío o caliente; las agotadas aparecen deshabilitadas. Con un coach seleccionado, las elegibles muestran la etiqueta «Cortesía».
+  2. **Productos:** pestañas de **categoría padre** (Bebidas, Comida…) con scroll horizontal y, debajo, chips de **subcategoría** (Café, Postres, Sandwiches…); buscador rápido sobre todo el menú. El filtro Todas / Frío / Caliente aparece **solo** en las categorías que usan temperatura. Cada tarjeta muestra el nombre, el precio y, en bebidas, un ícono de frío o caliente; las agotadas aparecen deshabilitadas. Con un coach seleccionado, las elegibles muestran la etiqueta «Cortesía».
   3. **Carrito** como panel inferior en móvil (y columna en tablet o escritorio), con cantidades, el interruptor «Cortesía» por artículo y el total.
   4. **Cobrar:** elige Efectivo o Transferencia y abre la confirmación (§8.4). Éxito → aviso con el folio y carrito vacío.
 - **Corte** (`/barra/corte`): pedidos del turno abierto, totales por método, campo «Efectivo que entrego» (con la nota obligatoria si es menor al cobrado) y el botón «Hacer corte» con confirmación. Si hay un corte anterior sin aprobar, se avisa.
@@ -424,7 +424,7 @@ Las Server Actions (capa `presentation`) validan sesión y rol, parsean con Zod 
 **Modal de aprobación del corte** (admin): muestra el periodo (CDMX), barra, pedidos, **efectivo cobrado**, **efectivo entregado** y la diferencia declarada con su motivo, la lista de transferencias aparte (cantidad y total) y las cortesías. Dos salidas: **«Recibí el efectivo completo»** (confirma) o **«No lo recibí completo»**, que pide cuánto se recibió, muestra el faltante calculado y exige una nota.
 
 ### 8.3 Menú público
-Una sección por categoría padre y una tarjeta por subcategoría, con la tipografía y los colores del tema actual; en bebidas, columnas Frías / Calientes (una debajo de otra en móvil); en comida, lista simple.
+Una sección por categoría padre y una tarjeta por subcategoría, con la tipografía y los colores del tema actual; en bebidas, columnas Frío / Caliente (una debajo de otra en móvil); en comida, lista simple.
 
 ### 8.5 Panel del cliente y del coach — «Mis cortesías» (D12)
 - Tarjeta en el dashboard de `client` (`/client`) y de `coach` (`/coach`), visible solo si tiene alguna cortesía vigente o un cupo mensual.
