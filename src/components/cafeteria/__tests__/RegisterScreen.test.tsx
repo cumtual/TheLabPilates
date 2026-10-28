@@ -39,9 +39,9 @@ describe('menú de la caja', () => {
     const tabs = within(screen.getByRole('tablist', { name: 'Categorías' }));
     expect(tabs.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Bebidas', 'Comida']);
     expect(screen.getByLabelText('Temperatura')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Frías' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Frío' }));
     expect(screen.queryByRole('button', { name: 'Agregar Latte caliente' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Agregar Latte fría' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agregar Latte frío' })).toBeInTheDocument();
 
     fireEvent.click(tabs.getByRole('tab', { name: 'Comida' }));
     expect(screen.queryByLabelText('Temperatura')).not.toBeInTheDocument();

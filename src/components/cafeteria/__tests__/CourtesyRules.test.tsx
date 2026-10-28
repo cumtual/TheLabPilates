@@ -58,7 +58,7 @@ describe('CourtesyRules', () => {
     render(<CourtesyRules rules={rules} />);
     fireEvent.change(screen.getByLabelText('Cortesías por coach al mes'), { target: { value: '6' } });
     fireEvent.change(screen.getByLabelText('Cortesía de Bebidas'), { target: { value: 'yes' } });
-    fireEvent.change(screen.getByLabelText('Cortesía de Agua (fría)'), { target: { value: 'no' } });
+    fireEvent.change(screen.getByLabelText('Cortesía de Agua (frío)'), { target: { value: 'no' } });
     fireEvent.change(screen.getByLabelText('Nuevo correo'), { target: { value: 'Caja@Lab.mx' } });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar reglas' }));

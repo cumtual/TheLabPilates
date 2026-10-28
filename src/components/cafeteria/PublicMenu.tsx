@@ -17,7 +17,7 @@ function Item({ item }: { item: MenuItem }) {
   );
 }
 
-/** En bebidas, columnas Frías / Calientes (una debajo de otra en móvil); en comida, lista simple. */
+/** En bebidas, columnas Frío / Caliente (una debajo de otra en móvil); en comida, lista simple. */
 function ItemList({ items, usesTemperature }: { items: MenuItem[]; usesTemperature: boolean }) {
   if (!usesTemperature) {
     return (
@@ -29,8 +29,8 @@ function ItemList({ items, usesTemperature }: { items: MenuItem[]; usesTemperatu
     );
   }
   const groups = [
-    ['cold', 'Frías'],
-    ['hot', 'Calientes'],
+    ['cold', 'Frío'],
+    ['hot', 'Caliente'],
   ] as const;
   return (
     <div className="grid gap-4 sm:grid-cols-2">

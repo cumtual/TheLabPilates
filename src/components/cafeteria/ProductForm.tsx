@@ -40,7 +40,7 @@ export function validateProductDraft(draft: ProductDraft, categories: CategoryRe
   if (!price.ok) errors.price = price.error;
   else if (price.cents === 0) errors.price = 'El monto debe ser mayor a $0.00.';
   if (draft.categoryId && requiresTemperature(draft.categoryId, indexCategories(categories)) && draft.temperature === null) {
-    errors.temperature = 'Elige si es fría o caliente.';
+    errors.temperature = 'Elige si es frío o caliente.';
   }
   return errors;
 }
@@ -141,7 +141,7 @@ export function ProductForm({ product, defaultCategoryId = '', categories, error
               className="mt-1 w-full min-h-11 px-3 rounded-lg border border-outline-variant bg-surface"
             >
               <option value="">Elige…</option>
-              <option value="cold">Fría</option>
+              <option value="cold">Frío</option>
               <option value="hot">Caliente</option>
             </select>
             {shown.temperature && <p className="mt-1 font-body text-xs text-error">{shown.temperature}</p>}

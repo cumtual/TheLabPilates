@@ -93,7 +93,7 @@ export function CategoryForm({ category, defaultParentId = null, categories, err
             className="mt-1 h-4 w-4 accent-primary"
           />
           <span>
-            Usa temperatura (fría / caliente)
+            Usa temperatura (frío / caliente)
             <span className="block text-xs text-on-surface-variant">Para bebidas. Sus subcategorías lo heredan.</span>
           </span>
         </label>
