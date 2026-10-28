@@ -18,7 +18,7 @@ export function TemperatureIcon({ temperature }: { temperature: Temperature | nu
   return (
     <span
       className={`material-symbols-outlined text-[18px] ${temperature === 'cold' ? 'text-sky-600' : 'text-orange-600'}`}
-      aria-label={temperature === 'cold' ? 'Fría' : 'Caliente'}
+      aria-label={temperature === 'cold' ? 'Frío' : 'Caliente'}
       role="img"
     >
       {temperature === 'cold' ? 'ac_unit' : 'local_fire_department'}
@@ -103,8 +103,8 @@ export function ProductGrid({ sections, onAdd, isCourtesyEligible }: ProductGrid
               {(
                 [
                   ['all', 'Todas'],
-                  ['cold', 'Frías'],
-                  ['hot', 'Calientes'],
+                  ['cold', 'Frío'],
+                  ['hot', 'Caliente'],
                 ] as const
               ).map(([value, label]) => (
                 <button key={value} type="button" aria-pressed={temp === value} onClick={() => setTemp(value)} className={chip(temp === value)}>
@@ -123,7 +123,7 @@ export function ProductGrid({ sections, onAdd, isCourtesyEligible }: ProductGrid
               type="button"
               disabled={!item.isAvailable}
               onClick={() => onAdd(item)}
-              aria-label={`Agregar ${item.name}${item.temperature ? (item.temperature === 'cold' ? ' fría' : ' caliente') : ''}`}
+              aria-label={`Agregar ${item.name}${item.temperature ? (item.temperature === 'cold' ? ' frío' : ' caliente') : ''}`}
               className="w-full h-full min-h-24 rounded-lg border border-outline-variant/40 bg-surface p-3 text-left shadow-sm transition hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span className="flex items-start justify-between gap-1">

@@ -60,14 +60,14 @@ describe('formulario de producto', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('Fría / Caliente solo y obligatorio si la categoría usa temperatura; se limpia al pasar a comida', () => {
+  it('Frío / Caliente solo y obligatorio si la categoría usa temperatura; se limpia al pasar a comida', () => {
     render(<MenuManager menu={menu} />);
     fireEvent.click(within_('category-cafe').getByRole('button', { name: 'Nuevo producto' }));
     expect(screen.getByLabelText('Temperatura')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Mocha' } });
     fireEvent.change(screen.getByLabelText('Precio (MXN)'), { target: { value: '72.50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    expect(screen.getByText('Elige si es fría o caliente.')).toBeInTheDocument();
+    expect(screen.getByText('Elige si es frío o caliente.')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Temperatura'), { target: { value: 'hot' } });
     fireEvent.change(screen.getByLabelText('Categoría'), { target: { value: 'postres' } });
     expect(screen.queryByLabelText('Temperatura')).not.toBeInTheDocument();
@@ -82,7 +82,7 @@ describe('confirmaciones (D9)', () => {
     fireEvent.change(screen.getByLabelText('Precio (MXN)'), { target: { value: '72.5' } });
     fireEvent.change(screen.getByLabelText('Temperatura'), { target: { value: 'cold' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    for (const text of ['Mocha', 'Bebidas › Café', 'fría', '$72.50']) expect(screen.getByRole('dialog')).toHaveTextContent(text);
+    for (const text of ['Mocha', 'Bebidas › Café', 'frío', '$72.50']) expect(screen.getByRole('dialog')).toHaveTextContent(text);
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }));
     await expectConfirmBeforeAction({
       trigger: () => fireEvent.click(screen.getByRole('button', { name: 'Guardar' })),
