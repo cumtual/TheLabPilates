@@ -5,6 +5,8 @@ import type { CheckinRepository } from '@/lib/checkin/checkin-repository';
 const state = vi.hoisted(() => ({
   repository: null as CheckinRepository | null,
   throwError: null as Error | null,
+  // QR de invitados (SPEC-GUEST-QR-CHECKIN): por defecto el token no es de un invitado.
+  guestCheckin: null as null | ((input: { token: unknown; actor: unknown }) => Promise<unknown>),
 }));
 
 vi.mock('@/db', () => ({ db: {} }));
@@ -14,6 +16,10 @@ vi.mock('@/lib/checkin/checkin-repository', () => ({
     if (state.throwError) throw state.throwError;
     return work(state.repository!);
   },
+}));
+vi.mock('@/modules/guest-checkin/presentation/checkin', () => ({
+  processGuestCheckin: (input: { token: unknown; actor: unknown }) =>
+    state.guestCheckin ? state.guestCheckin(input) : Promise.resolve({ ok: false, code: 'TOKEN_NOT_FOUND' }),
 }));
 
 import { POST } from '@/app/api/check-in/route';
@@ -55,6 +61,7 @@ describe('POST /api/check-in', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-22T10:00:00.000-06:00'));
     state.throwError = null;
+    state.guestCheckin = null;
     useStore();
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -174,5 +181,66 @@ describe('POST /api/check-in', () => {
       'OUTSIDE_ATTENDANCE_WINDOW', 'INTERNAL_ERROR',
     ];
     expect(Object.keys(CHECKIN_HTTP_STATUS).sort()).toEqual([...codes].sort());
+  });
+});
+
+describe('POST /api/check-in — QR de invitado (SPEC-GUEST-QR-CHECKIN)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T10:00:00.000-06:00'));
+    state.throwError = null;
+    useStore([]);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('token que no es de un titular → registra al invitado y responde subject guest', async () => {
+    const guest = vi.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        guestEnrollmentId: 'guest-1',
+        guestName: 'María López',
+        invitedByName: 'Admin Studio',
+        className: 'Mat Pilates',
+        classDate: '2026-09-22T15:00:00.000Z',
+        checkedInAt: '2026-09-22T16:00:00.000Z',
+      },
+    });
+    state.guestCheckin = guest;
+    session('coach');
+
+    const res = await POST(request({ token: VALID_TOKEN }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      data: {
+        subject: 'guest',
+        enrollmentId: 'guest-1',
+        studentName: 'María López',
+        invitedByName: 'Admin Studio',
+        className: 'Mat Pilates',
+        classDate: '2026-09-22T15:00:00.000Z',
+        checkedInAt: '2026-09-22T16:00:00.000Z',
+      },
+    });
+    expect(guest).toHaveBeenCalledWith({ token: VALID_TOKEN, actor: { id: COACH_ID, role: 'coach' } });
+  });
+
+  it('los errores del invitado usan el mismo contrato HTTP', async () => {
+    state.guestCheckin = vi.fn().mockResolvedValue({ ok: false, code: 'NOT_CLASS_COACH' });
+    session('coach', OTHER_COACH_ID);
+    const res = await POST(request({ token: VALID_TOKEN }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe('NOT_CLASS_COACH');
+  });
+
+  it('un client sigue recibiendo 403 sin llegar a los invitados', async () => {
+    const guest = vi.fn();
+    state.guestCheckin = guest;
+    session('client', 'client-id');
+    const res = await POST(request({ token: VALID_TOKEN }));
+    expect(res.status).toBe(403);
+    expect(guest).not.toHaveBeenCalled();
   });
 });

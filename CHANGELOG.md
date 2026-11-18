@@ -1,5 +1,138 @@
 # Changelog
 
+## [1.14.0](https://github.com/cumtual/TheLabPilates/compare/v1.13.0...v1.14.0) (2026-09-16)
+
+
+### Features
+
+* implement grace period for cancellations and attendance validation ([d905f88](https://github.com/cumtual/TheLabPilates/commit/d905f8818275f817c21c3bfc98f7b311c3db2492))
+* implement grace period for cancellations and attendance validation ([59fa87f](https://github.com/cumtual/TheLabPilates/commit/59fa87f000248fd3445995d3bc87e05e9607c7d4))
+
+## [1.13.0](https://github.com/cumtual/TheLabPilates/compare/v1.12.0...v1.13.0) (2026-09-15)
+
+
+### Features
+
+* add special events functionality including registration, discou… ([b448d09](https://github.com/cumtual/TheLabPilates/commit/b448d09a6e1fcce9e429b0a0fec717edc775705c))
+* add special events functionality including registration, discounts, and history ([5d44067](https://github.com/cumtual/TheLabPilates/commit/5d4406770546aa7fe178f49d2de8640d867f2bcb))
+
+## [1.12.0](https://github.com/cumtual/TheLabPilates/compare/v1.11.0...v1.12.0) (2026-09-14)
+
+
+### Features
+
+* update hero image and refactor class time formatting ([95f2008](https://github.com/cumtual/TheLabPilates/commit/95f200897dbc4bc7ec733427a545bfbc1c17b533))
+* update hero image and refactor class time formatting ([a101497](https://github.com/cumtual/TheLabPilates/commit/a101497285a821b23f98321807ef9dcc7ae33c96))
+
+## [1.11.0](https://github.com/cumtual/TheLabPilates/compare/v1.10.0...v1.11.0) (2026-09-14)
+
+
+### Features
+
+* **pricing:** update subscription prices for various packages ([726afe1](https://github.com/cumtual/TheLabPilates/commit/726afe1c57c427ef9e29e2fed4bd51ddbc05fc66))
+* **pricing:** update subscription prices for various packages ([a427b20](https://github.com/cumtual/TheLabPilates/commit/a427b20397d2fe74dcf7d5b9cbb4b5d47842a1f0))
+
+## [1.10.0](https://github.com/cumtual/TheLabPilates/compare/v1.9.0...v1.10.0) (2026-09-13)
+
+
+### Features
+
+* **pricing:** update pricing format by removing dollar signs and add… ([b66c5c1](https://github.com/cumtual/TheLabPilates/commit/b66c5c1c80df7fbffb786ab2be1c12436ddba93d))
+* **pricing:** update pricing format by removing dollar signs and adding them in display ([8541b06](https://github.com/cumtual/TheLabPilates/commit/8541b0639b00a0beb2d3f3bc50ca5af2a6ec2570))
+
+## [1.9.0](https://github.com/cumtual/TheLabPilates/compare/v1.8.0...v1.9.0) (2026-09-13)
+
+
+### Features
+
+* **pricing:** display package prices in the pricing section ([4e656cb](https://github.com/cumtual/TheLabPilates/commit/4e656cbea291f99f0aee3c7ba7b52ed70acc2c43))
+* **pricing:** display package prices in the pricing section ([9d0e9ad](https://github.com/cumtual/TheLabPilates/commit/9d0e9ad212d9f036eaf27f7bf99e209b2daebfd1))
+
+## [1.8.0](https://github.com/cumtual/TheLabPilates/compare/v1.7.1...v1.8.0) (2026-09-12)
+
+
+### Features
+
+* **profile:** implement user profile management with name and passwo… ([4ee3f0c](https://github.com/cumtual/TheLabPilates/commit/4ee3f0c6da8da43466399dbc44621e77844760a9))
+
+## [1.7.1](https://github.com/cumtual/TheLabPilates/compare/v1.7.0...v1.7.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **location:** update street address for accuracy in Location component ([a4fecb7](https://github.com/cumtual/TheLabPilates/commit/a4fecb79f9cdc0a7e092e37bd348133d606c4043))
+* **location:** update street address for accuracy in Location component ([fb42f45](https://github.com/cumtual/TheLabPilates/commit/fb42f45a2e4d24bcb3f6fca599baa3c2371036f9))
+
+## [1.7.0](https://github.com/cumtual/TheLabPilates/compare/v1.6.0...v1.7.0) (2026-09-12)
+
+
+### Features
+
+* **client:** add unique IDs for GuestToggle accessibility ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **sections:** implement rolling week functionality for class scheduling ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+
+
+### Bug Fixes
+
+* **auth:** update links from "/soon" to "/login" in various components ([6affe7e](https://github.com/cumtual/TheLabPilates/commit/6affe7ec0ce4f130cee2659406bcf3e9ee5b8b02))
+* **auth:** update links from "/soon" to "/login" in various components ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **layout:** change Navbar access link to "/login" ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **middleware:** refine authentication page checks for better route protection ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **queries:** update subscription expiration logic to include new conditions ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **sections:** translate pricing session labels to Spanish and update features ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+* **sections:** update Hero and Location components to link to "/login" ([4ceada5](https://github.com/cumtual/TheLabPilates/commit/4ceada501551ba0037e273840241a7a03ed60c0e))
+
+## [1.6.0](https://github.com/cumtual/TheLabPilates/compare/v1.5.0...v1.6.0) (2026-08-26)
+
+
+### Features
+
+* **classes:** add custom class type support with personalized naming ([c9c5d8b](https://github.com/cumtual/TheLabPilates/commit/c9c5d8b39b746dacd9177de97c02b709e631690c))
+
+## [1.5.0](https://github.com/cumtual/TheLabPilates/compare/v1.4.0...v1.5.0) (2026-08-26)
+
+
+### Features
+
+* **guest:** add guest enrollment system with capacity and credit man… ([03f0068](https://github.com/cumtual/TheLabPilates/commit/03f0068ecc055d6d42e7d5f705f9f0aec89c7a67))
+* **guest:** add guest enrollment system with capacity and credit management ([da3bb42](https://github.com/cumtual/TheLabPilates/commit/da3bb4217b03762eb65d9fca2bed46f55364f123))
+
+## [1.4.0](https://github.com/cumtual/TheLabPilates/compare/v1.3.0...v1.4.0) (2026-08-26)
+
+
+### Features
+
+* **subscriptions:** add subscription status management and expiratio… ([c81662f](https://github.com/cumtual/TheLabPilates/commit/c81662f30e0599ea46ec84926592e662468f2cfb))
+* **subscriptions:** add subscription status management and expiration tracking ([6714638](https://github.com/cumtual/TheLabPilates/commit/67146382ccec544fa691a33a7911e83fe71fd53b))
+
+## [1.3.0](https://github.com/cumtual/TheLabPilates/compare/v1.2.0...v1.3.0) (2026-08-05)
+
+
+### Features
+
+* **admin:** add attendance link to class management page ([7592eac](https://github.com/cumtual/TheLabPilates/commit/7592eac30423c22a40921d5bd947e15480da4898))
+* **admin:** add attendance management page for admin users ([745a247](https://github.com/cumtual/TheLabPilates/commit/745a247c8b0e2e198927eb801b6a5054e5be2d2c))
+* **client:** add next class preview to dashboard ([b02e012](https://github.com/cumtual/TheLabPilates/commit/b02e0124345b9b53b99e8c8ae2e13a53ab34daf9))
+* **coach:** add admin class access and cancelled enrollment queries ([12d6e16](https://github.com/cumtual/TheLabPilates/commit/12d6e16a7415457baf451b65ecc91b361cdc4513))
+* **coach:** add cancelled enrollments section to attendance page ([69c3a18](https://github.com/cumtual/TheLabPilates/commit/69c3a1805adbb5ed53ba8963e7b789534e5b1f8d))
+* **coach:** add class completion workflow to attendance sheet ([440a050](https://github.com/cumtual/TheLabPilates/commit/440a0507b07c9d156208db96a3bae41479a3adb5))
+* **enrollment:** improve subscription validation and prevent duplicate enrollments ([f1401ac](https://github.com/cumtual/TheLabPilates/commit/f1401acc514f595c173e083a9f480975941b35aa))
+
+
+### Bug Fixes
+
+* **admin:** add Mexico City timezone to date formatting in class creation form ([2bccf55](https://github.com/cumtual/TheLabPilates/commit/2bccf5521fc7203ed50f902f6fa56331a2bb3f74))
+* **admin:** exclude cancelled enrollments from class management page ([680ef3e](https://github.com/cumtual/TheLabPilates/commit/680ef3e362323cef49e5a92b8dca2a627140c7e4))
+* **admin:** parse datetime-local as Mexico City timezone for class creation ([be63f0e](https://github.com/cumtual/TheLabPilates/commit/be63f0eac5c27e2980558c9642c0e5f1f7edd623))
+* **client:** exclude cancelled enrollments from class list query ([c13aa38](https://github.com/cumtual/TheLabPilates/commit/c13aa385aa28381f1d3dc7f744280b18b9fffe67))
+* **coach:** add Mexico City timezone to date formatting in class creation form ([2e12073](https://github.com/cumtual/TheLabPilates/commit/2e12073c38184c9d147d90c5b45d4408b41bd918))
+* **coach:** allow admins to manage attendance for any class ([9b5c3e4](https://github.com/cumtual/TheLabPilates/commit/9b5c3e4c4c3762169c0efb5fa7e18e464930136c))
+* **coach:** parse datetime as Mexico City timezone for attendance page ([66feca2](https://github.com/cumtual/TheLabPilates/commit/66feca2dc579394fd3d07ae4af45391369922c16))
+* **coach:** parse datetime-local as Mexico City timezone for class creation ([fbc3bf3](https://github.com/cumtual/TheLabPilates/commit/fbc3bf3cd0909bf3e9084e89bd4055ef407b4244))
+* **date:** add timezone awareness to all date formatting functions ([982374d](https://github.com/cumtual/TheLabPilates/commit/982374d59929f66da02637a06883f287d18f3880))
+* **email:** add Mexico City timezone to date formatting in class cancellation email ([e591862](https://github.com/cumtual/TheLabPilates/commit/e591862266f66aa86633dff491c9e9f0bf609f65))
+* resolve conflict by removing package-lock.json in favor of pnpm ([10fc1a8](https://github.com/cumtual/TheLabPilates/commit/10fc1a86b684c874b399180e82a6b82d95f29593))
+
 ## [1.2.0](https://github.com/cumtual/TheLabPilates/compare/v1.1.1...v1.2.0) (2026-08-03)
 
 

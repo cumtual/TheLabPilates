@@ -51,6 +51,7 @@ src/
 │   ├── ui/, layout/, sections/     # shared UI, layout, landing-page sections
 │   └── auth/, profile/, legal/
 ├── modules/cafeteria/          # Clean Architecture pilot: domain → application → infrastructure → presentation
+├── modules/guest-checkin/      # Guest QR check-in (same layering as cafeteria)
 ├── db/                         # schema.ts (tables + enums), relations.ts, index.ts (client), seed.ts
 ├── lib/
 │   ├── auth/                   # jwt, session, password, rate-limiter
@@ -68,6 +69,7 @@ Tests live next to code in `__tests__/` folders.
 ### Key schema (`src/db/schema.ts`)
 - Tables: `users`, `password_resets`, `suscriptions` (plan catalog — note spelling), `user_suscriptions`, `payments`, `open_class` (classes), `class_enrollments`, `special_events`, `special_event_discounts`, `special_event_registrations`, `debit_cards`, `guest_enrollments`, `guest_credits`.
 - Special packages (`SPEC-SPECIAL-PACKAGES.md`): `subscription_rules` (catalog groups: N credits of [class types] in an optional CDMX time window) and `user_subscription_balances` (per-purchase copy of each rule with `credits_remaining`). `class_enrolleds.balance_id` records which group a booking consumed.
+- Guest QR (`SPEC-GUEST-QR-CHECKIN.md`, `sql/manual/2026-11-17_001_guest_checkin_columns.sql`): `guest_enrollments.checkin_token`, `checked_in_at`, `checked_in_by`.
 - Cafetería (`SPEC-CAFETERIA.md`, `sql/manual/2026-10-15_001_cafeteria.sql`): `cafeteria_categories` (two levels via `parent_id`), `cafeteria_products`, `cafeteria_settings` (single row), `bar_orders`, `bar_order_items`, `bar_cash_closings`, `cafeteria_courtesy_grants`; `debit_cards.bar_active`.
 - Enums:
   - `user_role`: client | coach | admin | barra
@@ -120,6 +122,12 @@ Tests live next to code in `__tests__/` folders.
   - The QR points to `/check-in?token=…`, which `POST /api/check-in` processes. Only the class's own coach or an admin can process it; a client gets 403. The check-in runs in one `FOR UPDATE` transaction that sets `attended`, sets `checked_in_at` and clears the token.
   - It is only allowed on the class's CDMX calendar day.
   - The daily cron (`/api/cron/complete-classes`, 00:00 CDMX) sets still-`pending` enrollments to `absent` for classes from `ATTENDANCE_AUTO_CLOSE_FROM` onward. Code lives in `src/lib/checkin/`.
+- **Guest QR check-in (`SPEC-GUEST-QR-CHECKIN.md`, code in `src/modules/guest-checkin`):**
+  - Only guests added by the admin (`origin = 'admin'`) get a single-use `guest_enrollments.checkin_token`, generated at creation. Client-added guests and guests created before the feature have none and use manual attendance.
+  - Only the admin sees the QR ("Ver QR" in `/admin/attendance/[classId]`), as many times as needed while the guest is `pending`. There is no regenerate.
+  - The QR uses the same `/check-in?token=…` URL. `POST /api/check-in` goes through `processAnyCheckin` (`src/lib/checkin/resolve-checkin.ts`): titular first (unchanged), guests only on `TOKEN_NOT_FOUND`. Same permissions, day window and error contract as the titular.
+  - `checked_in_by` records who marked the guest attended (QR or manual); `absent` clears it. The cron also sets still-`pending` guests to `absent` from `GUEST_ATTENDANCE_AUTO_CLOSE_FROM`.
+  - Layer rule (`module-boundaries.test.ts`): code outside the module imports only `presentation`.
 - **Special events:** no guests via Open Lab, no user-initiated cancellations/refunds, spots confirmed only once payment is approved.
 
 - **Cafetería (`SPEC-CAFETERIA.md`, code in `src/modules/cafeteria`):**

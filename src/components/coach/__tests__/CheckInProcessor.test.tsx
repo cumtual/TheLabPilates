@@ -43,6 +43,27 @@ describe('CheckInProcessor', () => {
     expect(JSON.parse(init.body)).toEqual({ token: TOKEN });
   });
 
+  it('QR de invitado → indica que es invitado y quién lo agregó (SPEC-GUEST-QR-CHECKIN)', async () => {
+    fetchMock.mockReturnValue(
+      jsonResponse(200, {
+        ok: true,
+        data: { subject: 'guest', studentName: 'María López', invitedByName: 'Admin Studio', className: 'Mat Pilates' },
+      })
+    );
+    renderProcessor();
+
+    await screen.findByText('¡Asistencia confirmada! Bienvenido(a) María López');
+    expect(screen.getByText('Invitado · agregado por Admin Studio')).toBeInTheDocument();
+  });
+
+  it('QR de titular → no muestra la línea de invitado', async () => {
+    fetchMock.mockReturnValue(jsonResponse(200, { ok: true, data: { subject: 'enrollment', studentName: 'Ana' } }));
+    renderProcessor();
+
+    await screen.findByText(/Asistencia confirmada/);
+    expect(screen.queryByText(/^Invitado/)).toBeNull();
+  });
+
   it('éxito → "¡Asistencia confirmada! Bienvenido(a) Ana" anunciado en aria-live', async () => {
     fetchMock.mockReturnValue(
       jsonResponse(200, {

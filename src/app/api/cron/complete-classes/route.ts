@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { autoCompletePassedClasses } from '@/lib/queries/class-auto-completion';
 import { markUnattendedEnrollmentsAbsent } from '@/lib/queries/attendance-auto-close';
+import { markUnattendedGuestsAbsent } from '@/modules/guest-checkin/presentation/auto-close';
 
 export async function GET(request: Request) {
   try {
@@ -13,11 +14,14 @@ export async function GET(request: Request) {
     const count = await autoCompletePassedClasses();
     // Runs at 00:00 CDMX: pending enrollments of finished class days → absent
     const markedAbsent = await markUnattendedEnrollmentsAbsent();
+    // Same for guests (SPEC-GUEST-QR-CHECKIN D5)
+    const guestsMarkedAbsent = await markUnattendedGuestsAbsent();
 
     return NextResponse.json({
       success: true,
       completed: count,
       markedAbsent,
+      guestsMarkedAbsent,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
