@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { AdminAddGuestForm } from '@/components/admin/AdminAddGuestForm';
 import { AdminRemoveGuestButton } from '@/components/admin/AdminRemoveGuestButton';
+import { GuestQrButton } from '@/components/admin/GuestQrButton';
 import type { GuestOrigin, EnrollmentStatus } from '@/lib/types/guest';
 
 export interface AdminGuestData {
@@ -76,12 +77,22 @@ export function AdminGuestSection({ classId, guests }: AdminGuestSectionProps) {
                 </div>
 
                 {guest.origin === 'admin' && (
-                  <AdminRemoveGuestButton
-                    guestEnrollmentId={guest.id}
-                    guestName={guest.guestName}
-                    origin={guest.origin}
-                    onSuccess={handleSuccess}
-                  />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                    {/* QR de check-in (SPEC-GUEST-QR-CHECKIN D1): solo mientras siga pendiente */}
+                    {guest.status === 'pending' && (
+                      <GuestQrButton
+                        guestEnrollmentId={guest.id}
+                        guestName={guest.guestName}
+                        onClose={handleSuccess}
+                      />
+                    )}
+                    <AdminRemoveGuestButton
+                      guestEnrollmentId={guest.id}
+                      guestName={guest.guestName}
+                      origin={guest.origin}
+                      onSuccess={handleSuccess}
+                    />
+                  </div>
                 )}
               </div>
             ))}
