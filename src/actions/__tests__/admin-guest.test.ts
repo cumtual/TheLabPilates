@@ -130,6 +130,9 @@ describe('adminRemoveGuestAction', () => {
       status: 'pending',
       createdAt: new Date(),
       cancelledAt: null,
+      checkinToken: null,
+      checkedInAt: null,
+      checkedInById: null,
     });
 
     const result = await adminRemoveGuestAction('guest-1');
@@ -159,6 +162,9 @@ describe('adminRemoveGuestAction', () => {
       status: 'cancelled',
       createdAt: new Date(),
       cancelledAt: null,
+      checkinToken: null,
+      checkedInAt: null,
+      checkedInById: null,
     });
 
     const result = await adminRemoveGuestAction('guest-1');
@@ -186,6 +192,9 @@ describe('adminRemoveGuestAction', () => {
       status: 'pending',
       createdAt: new Date(),
       cancelledAt: null,
+      checkinToken: null,
+      checkedInAt: null,
+      checkedInById: null,
     });
 
     // Mock transaction to simulate successful execution
@@ -227,6 +236,9 @@ describe('adminRemoveGuestAction', () => {
       status: 'pending',
       createdAt: new Date(),
       cancelledAt: null,
+      checkinToken: null,
+      checkedInAt: null,
+      checkedInById: null,
     });
 
     // Mock transaction to throw an error
@@ -274,6 +286,9 @@ const guestEnrollmentArb = fc.record({
   status: activeStatusArb,
   createdAt: fc.date(),
   cancelledAt: fc.constant(null),
+  checkinToken: fc.constant(null),
+  checkedInAt: fc.constant(null),
+  checkedInById: fc.constant(null),
 });
 
 // ─── Property-Based Tests ──────────────────────────────────────────────────────
@@ -386,6 +401,9 @@ describe('Property 14: Admin solo puede eliminar invitados de origen admin', () 
             status,
             createdAt,
             cancelledAt: null,
+            checkinToken: null,
+            checkedInAt: null,
+            checkedInById: null,
           });
 
           const result = await adminRemoveGuestAction(enrollmentId);

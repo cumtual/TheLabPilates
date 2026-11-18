@@ -8,6 +8,7 @@ import { getSession } from '@/lib/auth/session';
 import { getAvailableCapacity } from '@/lib/guest/capacity';
 import type { ActionResult } from '@/lib/types';
 import { buildGuestCancellationPatch } from '@/lib/enrollment/cancellation';
+import { newGuestCheckinToken } from '@/modules/guest-checkin/presentation/tokens';
 
 /**
  * Admin: add a guest to a class manually.
@@ -102,13 +103,15 @@ export async function adminAddGuestAction(
         throw new Error('NO_CAPACITY');
       }
 
-      // Insert guest enrollment with origin 'admin'
+      // Insert guest enrollment with origin 'admin' and its single-use QR token
+      // (SPEC-GUEST-QR-CHECKIN D1).
       await tx.insert(guestEnrollments).values({
         openClassId: classId,
         guestName: trimmedGuestName,
         origin: 'admin',
         registeredById: session.sub,
         status: 'pending',
+        checkinToken: newGuestCheckinToken(),
       });
     });
   } catch (error) {

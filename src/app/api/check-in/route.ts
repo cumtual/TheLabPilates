@@ -1,9 +1,10 @@
 import { getSession } from '@/lib/auth/session';
 import { checkinError, checkinJson } from '@/lib/checkin/http';
-import { processCheckin } from '@/lib/checkin/process-checkin';
+import { processAnyCheckin } from '@/lib/checkin/resolve-checkin';
 
 /**
  * POST /api/check-in — registra la asistencia de un QR (SPEC-QR-CHECKIN §7.2).
+ * Acepta el QR del titular y el del invitado (SPEC-GUEST-QR-CHECKIN §6.1).
  * Orden: Origin → sesión → rol → body → transacción.
  */
 
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     const token = await readToken(request);
     if (token === null) return checkinError('INVALID_PAYLOAD');
 
-    const result = await processCheckin({
+    const result = await processAnyCheckin({
       token,
       actor: { id: session.sub, role: session.role },
     });

@@ -304,6 +304,10 @@ export const guestEnrollments = pgTable('guest_enrollments', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   // Cancellation audit (admin only) — sql/manual/2026-09-24_001_enrollment_cancelled_at.sql
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  // Guest QR check-in — sql/manual/2026-11-17_001_guest_checkin_columns.sql (SPEC-GUEST-QR-CHECKIN)
+  checkinToken: varchar('checkin_token', { length: 64 }).unique('guest_enrollments_checkin_token_unique'),
+  checkedInAt: timestamp('checked_in_at', { withTimezone: true }),
+  checkedInById: uuid('checked_in_by').references(() => users.id, { onDelete: 'set null' }),
 });
 
 export const guestCredits = pgTable('guest_credits', {

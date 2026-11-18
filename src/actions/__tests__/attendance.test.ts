@@ -284,6 +284,32 @@ describe('Manual attendance: QR consistency and hardening', () => {
     expect(result.success).toBe(true);
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(db.update).toHaveBeenNthCalledWith(2, guestEnrollments);
-    expect(setMock).toHaveBeenNthCalledWith(2, { status: 'absent' });
+    // SPEC-GUEST-QR-CHECKIN GI-2/GI-3: absent clears check-in, actor and QR token.
+    expect(setMock).toHaveBeenNthCalledWith(2, {
+      status: 'absent',
+      checkedInAt: null,
+      checkedInById: null,
+      checkinToken: null,
+    });
+  });
+
+  it('guest attended records who marked it, keeps the first check-in and voids the QR token', async () => {
+    mockMembership([], [{ id: 'guest-1', status: 'pending' }]);
+
+    const result = await updateAttendanceAction('class-uuid-123', [
+      { enrollmentId: 'guest-1', status: 'attended' },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(db.update).toHaveBeenCalledWith(guestEnrollments);
+    const values = setMock.mock.calls[0][0];
+    expect(values.status).toBe('attended');
+    expect(values.checkinToken).toBeNull();
+    expect(dialect.sqlToQuery(values.checkedInAt as SQL).sql).toBe(
+      'coalesce("guest_enrollments"."checked_in_at", now())'
+    );
+    const by = dialect.sqlToQuery(values.checkedInById as SQL);
+    expect(by.sql).toBe('coalesce("guest_enrollments"."checked_in_by", $1::uuid)');
+    expect(by.params).toEqual(['coach-uuid-123']);
   });
 });

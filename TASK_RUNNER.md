@@ -1,3 +1,142 @@
+# TASK-GQR — QR de asistencia para invitados
+
+**Estado:** ✅ Implementado (2026-11-17). Suite 1408/1408 (182 archivos) y `tsc` limpio; lint sin problemas en los archivos nuevos o tocados. `next build` compila, pero el prerender de `/` falla en local porque no hay `.env.local` ni BD (no está relacionado con este cambio). **Pendiente (usuario):** E2E manual de VERIFY-01, fijar `GUEST_ATTENDANCE_AUTO_CLOSE_FROM` con la fecha real del deploy, DB-03 y commit.
+**Especificación:** `SPEC-GUEST-QR-CHECKIN.md` (D1–D10).
+**Runner:** Vitest. Las reglas de ejecución (🔴 RED → 🟢 GREEN → 🔵 REFACTOR, `tsc --noEmit` limpio) son las de `TASK-QR-CHECKIN`.
+**Restricción:** ninguna tarea ejecuta comandos contra la BD. Los tests existentes del titular (`src/lib/checkin/__tests__/*`) deben seguir pasando **sin modificarse**.
+
+## Orden y dependencias
+
+`DB-01 → DB-02 → ARCH-01 → DOM-01 → APP-01 → APP-02 → APP-03 → INF-01 → INT-01 → INT-02 → INT-03 → INT-04 → FE-01 → FE-02 → DOC-01 → VERIFY-01 → DB-03 (🔒 usuario, antes del deploy)`
+
+## Matriz de trazabilidad
+
+| Caso obligatorio | Tareas |
+|---|---|
+| Token generado al agregar invitado (admin) | DB-01, INT-02 |
+| Solo admin ve el QR; varias veces mientras siga `pending` | DOM-01, APP-02, FE-01 |
+| Escaneo por coach titular / admin; 403 a client | DOM-01, APP-01, INT-01 |
+| Sin duplicados (un solo uso, concurrencia) | APP-01, INF-01 |
+| `checked_in_by` en QR y asistencia manual | APP-01, INT-03 |
+| Cierre automático a `absent` | APP-03, INT-04 |
+| Flujo del titular intacto | INT-01, VERIFY-01 |
+
+---
+
+## TASK-GQR-DB-01 — Script SQL manual y test de seguridad
+- **Archivos:** `sql/manual/2026-11-17_001_guest_checkin_columns.sql` y `src/db/__tests__/guest-checkin-migration.test.ts` (nuevos)
+- **🔴 Tests:**
+  - [x] `ADD COLUMN IF NOT EXISTS` de `checkin_token varchar(64)`, `checked_in_at timestamptz` y `checked_in_by uuid`.
+  - [x] El `UNIQUE` y la FK van dentro de guards `pg_constraint`.
+  - [x] Todo va dentro de `BEGIN/COMMIT` con `SET LOCAL lock_timeout`.
+  - [x] Ninguna palabra prohibida (`DROP`, `TRUNCATE`, `DELETE`, `ALTER TYPE`, `RENAME`, `SET NOT NULL`, `ALTER COLUMN`, `CASCADE`).
+- **Verificación:** `pnpm test src/db/__tests__/guest-checkin-migration.test.ts`
+
+## TASK-GQR-DB-02 — Schema Drizzle
+- **Archivos:** `src/db/schema.ts`, `src/db/__tests__/schema-guest-checkin.test.ts` (nuevo)
+- **🔴 Tests** (`getTableConfig(guestEnrollments)`):
+  - [x] Las 3 columnas son nullable, con el unique `guest_enrollments_checkin_token_unique`.
+  - [x] La FK `checked_in_by` → `users.id` es `set null`.
+  - [x] Las columnas existentes siguen intactas.
+- **Verificación:** `pnpm test src/db/__tests__/schema-guest-checkin.test.ts && pnpm exec tsc --noEmit`
+
+## TASK-GQR-ARCH-01 — Esqueleto del módulo y test de fronteras
+- **Archivos:** `src/modules/guest-checkin/**`, `src/modules/guest-checkin/__tests__/module-boundaries.test.ts`
+- **🔴 Tests** (mismo patrón que cafetería):
+  - [x] `domain` no importa nada.
+  - [x] `application` solo importa `domain`.
+  - [x] Ningún archivo fuera del módulo importa `application` ni `infrastructure`.
+
+## TASK-GQR-DOM-01 — Reglas de dominio
+- **Archivos:** `domain/guest-checkin.ts`, `domain/guest-qr-policy.ts`, `domain/guest-attendance.ts`, `domain/errors.ts`
+- **🔴 Tests:**
+  - [x] `evaluateGuestCheckin`: un coach que no es titular → `NOT_CLASS_COACH`, y esto gana a los demás errores. Después `ENROLLMENT_NOT_PENDING`, `CLASS_CANCELLED` y `OUTSIDE_ATTENDANCE_WINDOW`, en ese orden.
+  - [x] `evaluateGuestCheckin`, propiedad `fast-check`: solo da ok si el actor es admin o coach titular, `pending`, la clase no está cancelada y la ventana está abierta.
+  - [x] `canViewGuestQr`: solo admin, `origin='admin'`, `pending` y con token.
+  - [x] `guestAttendanceTransition`: `attended` → conserva o pone el momento y el actor y limpia el token; `absent` → limpia todo.
+  - [x] `GuestCheckinErrorCode` es un subconjunto de `CheckinErrorCode` (test de tipos).
+
+## TASK-GQR-APP-01 — Caso de uso `checkInGuestByToken`
+- **🔴 Tests** (fakes en memoria):
+  - [x] Sin actor → `UNAUTHENTICATED`; client → `FORBIDDEN_ROLE`, sin abrir la transacción; formato inválido → `TOKEN_NOT_FOUND`.
+  - [x] Éxito → `attended` con `checkedInAt` y `checkedInBy = actor`, y el token queda en `null`.
+  - [x] Un segundo uso del mismo token → `TOKEN_NOT_FOUND`.
+  - [x] Si `markAttended` actualiza 0 filas (carrera) → `TOKEN_NOT_FOUND`.
+
+## TASK-GQR-APP-02 — Caso de uso `getGuestCheckinQr`
+- **🔴 Tests:**
+  - [x] Admin con invitado `origin='admin'` y `pending` → `qrDataUrl` con la URL `/check-in?token=…`. Dos llamadas devuelven el mismo QR (D2).
+  - [x] Coach, client, origen `user`, `attended` o sin token → `GUEST_QR_NOT_AVAILABLE`.
+
+## TASK-GQR-APP-03 — Caso de uso `closeUnattendedGuests`
+- **🔴 Tests:**
+  - [x] Pasa el `cutoff` (00:00 CDMX de `now`) y `GUEST_ATTENDANCE_AUTO_CLOSE_FROM` al repositorio y devuelve el conteo.
+
+## TASK-GQR-INF-01 — Infraestructura Drizzle y adaptadores
+- **Archivos:** `infrastructure/drizzle-guest-checkin-repository.ts`, `drizzle-unit-of-work.ts`, `adapters.ts`, `container.ts`
+- **🔴 Tests** (mock de `tx`, igual que `checkin-repository.test.ts`):
+  - [x] `findByTokenForUpdate` usa `.for('update', { of: guestEnrollments })`.
+  - [x] `markAttended` filtra por `id`, `status='pending'` y `checkin_token`.
+  - [x] `markUnattendedAbsent` solo considera clases `scheduled`/`completed` en el rango.
+
+## TASK-GQR-INT-01 — `processAnyCheckin` y Route Handler
+- **Archivos:** `src/lib/checkin/resolve-checkin.ts` (nuevo), `src/app/api/check-in/route.ts`, `src/lib/checkin/__tests__/resolve-checkin.test.ts`, `src/app/api/check-in/__tests__/route.test.ts`
+- **🔴 Tests:**
+  - [x] Token del titular → solo llama a `processCheckin`, con `subject: 'enrollment'`.
+  - [x] `TOKEN_NOT_FOUND` del titular → llama a `processGuestCheckin`, con `subject: 'guest'` e `invitedByName`.
+  - [x] Cualquier otro error del titular (403/409) no consulta a invitados.
+  - [x] Los tests existentes de la ruta siguen pasando; solo se agrega el mock del módulo.
+
+## TASK-GQR-INT-02 — Token al agregar invitado (admin)
+- **Archivos:** `src/actions/admin-guest.ts`, `src/actions/__tests__/admin-guest*.test.ts`
+- **🔴 Tests:**
+  - [x] El `insert` incluye un `checkinToken` de 64 hex.
+  - [x] `enrollWithGuestAction` y `addGuestToReservationAction` **no** generan token (D1).
+
+## TASK-GQR-INT-03 — Asistencia manual coherente
+- **Archivos:** `src/actions/coach.ts`, `src/actions/__tests__/coach.test.ts`
+- **🔴 Tests:**
+  - [x] Un invitado marcado `attended` recibe `checked_in_at` y `checked_in_by` (con `coalesce`) y el token en `null`.
+  - [x] Marcado `absent` → los tres campos quedan en `null`.
+  - [x] La rama del titular no cambia (sus tests existentes siguen en verde).
+
+## TASK-GQR-INT-04 — Cron
+- **Archivos:** `src/app/api/cron/complete-classes/route.ts` y su test
+- **🔴 Tests:**
+  - [x] Llama a `markUnattendedGuestsAbsent` después de `markUnattendedEnrollmentsAbsent`.
+  - [x] El JSON incluye `guestsMarkedAbsent` y conserva los campos existentes.
+
+## TASK-GQR-FE-01 — `GuestQrModal` y botón "Ver QR" (admin)
+- **Archivos:** `src/components/admin/GuestQrModal.tsx` (nuevo), `AdminGuestSection.tsx` y sus tests
+- **🔴 Tests:**
+  - [x] El botón solo aparece en invitados `origin='admin'` y `pending`.
+  - [x] Al hacer clic llama a `getGuestCheckinQrAction` y abre el modal: `role="dialog"`, imagen con `alt`, "Descargar" con `download`, y `Esc` o "Cerrar" devuelven el foco.
+  - [x] Si la acción responde con error, se muestra el mensaje sin abrir el QR.
+  - [x] Es mobile-first: hoja inferior en móvil y centrado desde `sm:`.
+
+## TASK-GQR-FE-02 — Resultado del escaneo para invitado
+- **Archivos:** `src/components/coach/CheckInProcessor.tsx` y su test
+- **🔴 Tests:**
+  - [x] Con `subject: 'guest'`, muestra "Invitado · agregado por {invitedByName}".
+  - [x] La vista del titular no cambia.
+
+## TASK-GQR-DOC-01 — Documentación
+- **Archivos:** `CLAUDE.md` (Attendance: invitados admin con QR, `checked_in_by` y cron de invitados), `CHANGELOG.md`
+
+## TASK-GQR-VERIFY-01 — Verificación final
+```bash
+pnpm exec tsc --noEmit
+pnpm lint
+pnpm test
+pnpm build
+```
+- [ ] E2E manual contra una BD que no sea de producción: el admin agrega un invitado → ve el QR dos veces → el coach titular escanea → `attended` → un segundo escaneo da "inválido o ya utilizado" → otro coach recibe 403.
+
+## TASK-GQR-DB-03 — 🔒 Ejecución en producción (la hace el usuario)
+- Ejecutar `2026-11-17_001_guest_checkin_columns.sql`, verificar con SPEC §3.2 y después hacer el deploy.
+
+---
+
 # TASK-CF — Módulo de Barra / Cafetería
 
 **Estado:** ✅ Ejecutado (2026-10-16), salvo lo marcado como pendiente del usuario. Suite 1300/1300 (167 archivos), `tsc` limpio, `next build` compila (rutas nuevas dinámicas), lint 60 problemas (igual que la base; ninguno en archivos nuevos). TASK-CF-DB-04 ✅ corrida por el usuario (2026-10-15); `/menu` se probó contra esa BD con el build de producción. **Pendiente (usuario):** E2E manual de TASK-CF-VERIFY-01 con cuentas reales, revisión legal del aviso de privacidad y commit. Ajustes al diseño: SPEC §14.

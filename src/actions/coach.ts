@@ -10,6 +10,7 @@ import { canRoleCreateClassType, CUSTOM_CLASS_TYPE } from '@/lib/utils/class-typ
 import { parseDateTimeLocalAsMexicoCity, getMexicoCityDayBounds } from '@/lib/utils/date';
 import { checkAndExpireSubscriptions } from '@/lib/queries/check-subscription-expiration';
 import { getTotalOccupied } from '@/lib/guest/capacity';
+import { guestAttendanceSet } from '@/modules/guest-checkin/presentation/attendance';
 
 interface AttendanceRecord {
   enrollmentId: string;
@@ -119,9 +120,10 @@ export async function updateAttendanceAction(
           )
           .where(and(eq(classEnrollments.id, record.enrollmentId), eq(classEnrollments.openClassId, classId)));
       } else {
+        // Guests: record who marked it and void their QR token (SPEC-GUEST-QR-CHECKIN §4).
         await tx
           .update(guestEnrollments)
-          .set({ status: record.status })
+          .set(guestAttendanceSet(record.status, session.sub))
           .where(and(eq(guestEnrollments.id, record.enrollmentId), eq(guestEnrollments.openClassId, classId)));
       }
     }

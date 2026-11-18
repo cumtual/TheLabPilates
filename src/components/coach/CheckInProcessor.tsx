@@ -13,6 +13,9 @@ import { CheckInResultCard, checkInLinkClassName } from './CheckInResultCard';
 
 interface CheckInSuccessData {
   studentName: string;
+  /** `guest` para el QR de un invitado (SPEC-GUEST-QR-CHECKIN §6.1). */
+  subject?: 'enrollment' | 'guest';
+  invitedByName?: string | null;
   className?: string;
   classDate?: string | null;
 }
@@ -85,7 +88,7 @@ export function CheckInProcessor({ token, dashboardHref }: CheckInProcessorProps
   }
 
   if (state.kind === 'success') {
-    const { studentName, className, classDate } = state.data;
+    const { studentName, className, classDate, subject, invitedByName } = state.data;
     const detail = [className, classDate ? formatFullDateTime(classDate, false) : null]
       .filter(Boolean)
       .join(' · ');
@@ -96,6 +99,11 @@ export function CheckInProcessor({ token, dashboardHref }: CheckInProcessorProps
         message={`¡Asistencia confirmada! Bienvenido(a) ${studentName}`}
         detail={detail || undefined}
       >
+        {subject === 'guest' && (
+          <p className="font-body text-sm text-on-surface-variant">
+            Invitado{invitedByName ? ` · agregado por ${invitedByName}` : ''}
+          </p>
+        )}
         {dashboardLink}
       </CheckInResultCard>
     );
